@@ -12,7 +12,7 @@ interface ThemeContextValue {
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [isDark, setIsDark] = useState(true);
+  const [isDark, setIsDark] = useState(false);
 
   const colors = useMemo(() => (isDark ? darkColors : lightColors), [isDark]);
   const toggleTheme = useCallback(() => setIsDark(d => !d), []);

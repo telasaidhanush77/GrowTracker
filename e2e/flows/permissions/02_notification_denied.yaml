@@ -1,0 +1,45 @@
+# 02_notification_denied.yaml
+# Push notifications — permission DENIED
+#
+# WHAT THIS TESTS:
+#   When notification permission is pre-denied:
+#   1. The app launches and logs in without crashing
+#   2. The dashboard is reachable — the app degrades gracefully (no push token, but no crash)
+#   3. The employee dashboard is fully functional without notifications
+#
+# WHY THIS MATTERS:
+#   usePushNotifications calls register() which hits requestPermissionsAsync() then
+#   exits early when denied. If the denied path throws or causes an unhandled state
+#   update, the app will crash. This flow proves it does not.
+#
+# CREDENTIALS: Set EMPLOYEE_USER and EMPLOYEE_PASS in e2e/.env
+
+appId: com.growtracker.app
+---
+
+- launchApp:
+    clearState: true
+    permissions:
+      notifications: deny
+
+- runFlow: "../../helpers/login_employee.yaml"
+
+# Dashboard must be reachable even when notification permission is denied
+- assertVisible: "My Workspace"
+- takeScreenshot: "01a_notif_denied_dashboard"
+
+# Key assertion: no crash dialog, no error UI, normal dashboard content visible
+- assertNotVisible: "Something went wrong"
+- assertNotVisible: "permission-denied-banner"
+
+# The app is fully usable: navigate to a few screens to confirm no regression
+- tapOn: "🔔"
+- waitForAnimationToEnd
+- assertVisible: "Notifications"
+- assertNotVisible: "Something went wrong"
+- takeScreenshot: "01b_notif_denied_notifications_screen"
+
+- tapOn: "‹"
+- waitForAnimationToEnd
+- assertVisible: "My Workspace"
+- takeScreenshot: "01c_notif_denied_back_to_dashboard"

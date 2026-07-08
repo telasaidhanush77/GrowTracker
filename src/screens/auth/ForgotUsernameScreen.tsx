@@ -1,9 +1,9 @@
-import { useMemo, useState } from 'react';
+﻿import { useMemo, useState } from 'react';
 import {
-  ActivityIndicator, KeyboardAvoidingView, Platform,
-  StyleSheet, Text, TextInput, TouchableOpacity, View,
+  ActivityIndicator, Keyboard, KeyboardAvoidingView, Platform,
+  StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View,
 } from 'react-native';
-import { useAuth } from '../../context/AuthContext';
+import { supabase } from '../../lib/supabase';
 import { useTheme } from '../../context/ThemeContext';
 import { Radius, Shadow, Spacing } from '../../theme';
 import type { ColorPalette } from '../../theme';
@@ -32,7 +32,6 @@ interface Props {
 export default function ForgotUsernameScreen({ onBack }: Props) {
   const { colors, isDark } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
-  const { recoverUsername } = useAuth();
 
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
@@ -47,17 +46,27 @@ export default function ForgotUsernameScreen({ onBack }: Props) {
       return;
     }
     setLoading(true);
-    const res = await recoverUsername(email);
+    const { data, error: supaErr } = await supabase
+      .from('profiles')
+      .select('username, employee_code')
+      .eq('email', email.toLowerCase().trim())
+      .single();
     setLoading(false);
-    if (res.ok && res.username && res.uniqueId) {
-      setResult({ username: res.username, uniqueId: res.uniqueId });
+    // PGRST116 = no rows found; anything else is a server/network error
+    if (supaErr && supaErr.code !== 'PGRST116') {
+      setError('Something went wrong. Please try again.');
+      return;
+    }
+    if (data?.username) {
+      setResult({ username: data.username, uniqueId: data.employee_code });
     } else {
-      setError(res.error ?? 'Recovery failed. Please try again.');
+      setError('No account found with that email address.');
     }
   }
 
   return (
     <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
       <View style={styles.content}>
         <TouchableOpacity style={styles.backBtn} onPress={onBack} activeOpacity={0.7}>
           <Text style={styles.backBtnText}>‹ Back</Text>
@@ -100,6 +109,8 @@ export default function ForgotUsernameScreen({ onBack }: Props) {
               keyboardType="email-address"
               autoCapitalize="none"
               autoCorrect={false}
+              returnKeyType="done"
+              onSubmitEditing={handleRecover}
             />
             <TouchableOpacity
               style={[styles.submitBtn, loading && styles.submitBtnDisabled]}
@@ -114,6 +125,7 @@ export default function ForgotUsernameScreen({ onBack }: Props) {
           </>
         )}
       </View>
+      </TouchableWithoutFeedback>
     </KeyboardAvoidingView>
   );
 }

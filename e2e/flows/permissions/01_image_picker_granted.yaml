@@ -1,0 +1,63 @@
+# 01_image_picker_granted.yaml
+# Image picker — camera and photo library GRANTED
+#
+# WHAT THIS TESTS:
+#   When camera and photo library permissions are pre-granted before app launch:
+#   1. The Submit Evidence screen shows "Take Photo" and "Choose from Library" buttons
+#   2. No PermissionDeniedBanner is visible
+#   3. Tapping "Take Photo" invokes the camera (mocked by Maestro — no real capture needed)
+#   4. Tapping "Choose from Library" invokes the library picker
+#
+# CREDENTIALS: Set EMPLOYEE_USER and EMPLOYEE_PASS in e2e/.env
+# REQUIRES: Employee must have at least one goal to navigate to Submit Evidence
+
+appId: com.growtracker.app
+---
+
+- launchApp:
+    clearState: true
+    permissions:
+      camera: allow
+      photos: allow
+
+- runFlow: "../../helpers/login_employee.yaml"
+- assertVisible: "My Workspace"
+
+# Navigate to Submit Evidence via the Actions tab → first goal
+- tapOn: "Actions"
+- waitForAnimationToEnd
+- takeScreenshot: "01a_granted_actions_tab"
+
+# Tap the first "Submit Evidence" or "Resubmit Evidence" button in the list
+- tapOn:
+    text: "Submit Evidence"
+    index: 0
+- waitForAnimationToEnd
+- takeScreenshot: "01b_granted_submit_evidence_screen"
+
+# Verify no permission denied banner is shown
+- assertNotVisible:
+    id: "permission-denied-banner"
+
+# Verify both native attachment buttons are visible
+- assertVisible:
+    id: "take-photo-btn"
+- assertVisible:
+    id: "attach-file-btn"
+- takeScreenshot: "01c_granted_buttons_visible"
+
+# Tap "Take Photo" — Maestro will handle the OS camera picker automatically
+# because we pre-granted camera permission
+- tapOn:
+    id: "take-photo-btn"
+- waitForAnimationToEnd
+- takeScreenshot: "01d_granted_after_camera_tap"
+# After camera interaction (or dismissal), we should still be on Submit Evidence
+# and not have crashed
+- assertVisible:
+    id: "attach-file-btn"
+
+- tapOn: "‹"
+- waitForAnimationToEnd
+- assertVisible: "My Workspace"
+- takeScreenshot: "01e_granted_back_to_dashboard"

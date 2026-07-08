@@ -34,9 +34,7 @@ async function get<T>(key: string, fallback: T): Promise<T> {
 }
 
 async function set(key: string, value: unknown): Promise<void> {
-  try {
-    await AsyncStorage.setItem(key, JSON.stringify(value));
-  } catch {}
+  await AsyncStorage.setItem(key, JSON.stringify(value));
 }
 
 export const userStore = {

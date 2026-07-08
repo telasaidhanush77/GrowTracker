@@ -1,5 +1,25 @@
 {
-  "enabledPlugins": {
-    "expo@claude-plugins-official": true
+  "permissions": {
+    "allow": [
+      "Bash(maestro*)",
+      "Bash(npm*)",
+      "Bash(npx*)",
+      "Bash(export*)",
+      "Bash(cd*)",
+      "Bash(adb*)",
+      "Bash(grep*)",
+      "Bash(cat*)",
+      "Bash(ls*)",
+      "PowerShell(maestro*)",
+      "PowerShell(npm*)",
+      "PowerShell(adb*)",
+      "PowerShell(Set-Location*)",
+      "PowerShell(Get-ChildItem*)",
+      "PowerShell(Copy-Item*)",
+      "PowerShell(New-Item*)",
+      "PowerShell(Start-Sleep*)",
+      "PowerShell(Write-Host*)"
+    ],
+    "deny": []
   }
 }

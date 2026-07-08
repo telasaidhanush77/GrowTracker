@@ -1,0 +1,123 @@
+# 01_double_tap_prevention.yaml — Rapid double-tap must not push the same screen twice
+#
+# WHAT THIS TESTS:
+#   Rapidly tapping a navigation card twice in quick succession should result in
+#   the target screen being pushed ONCE, not twice. Verified by pressing the UI
+#   "‹" back button once and asserting the dashboard is restored (not a duplicate
+#   copy of the target screen).
+#
+# WHY THIS IS INDEPENDENT OF BackHandler:
+#   This flow uses the "‹" header back button (which calls goBack() directly) rather
+#   than the hardware back key. It can run before the BackHandler fix is applied.
+#
+# GAP — NO DUPLICATE GUARD TODAY:
+#   navigate() in App.tsx pushes unconditionally. Two rapid taps produce two
+#   identical stack entries. The test below will FAIL (both assertions after the
+#   first "‹" tap will fail because we land on a duplicate Goals List entry).
+#
+#   Fix: see README.md — add a top-of-stack equality check inside the updater.
+#
+# SCREENS TESTED:
+#   1. Employee: My Goals card  → Goals List
+#   2. Employee: Daily Work Log → Daily Log
+#   3. Employee: 🔔 button      → Notifications
+#   (Manager and Admin variants follow the same pattern; add them here if needed.)
+#
+# CREDENTIALS: Set EMPLOYEE_USER and EMPLOYEE_PASS in e2e/.env
+
+appId: com.growtracker.app
+---
+
+- launchApp:
+    clearState: true
+- runFlow: "../../helpers/login_employee.yaml"
+- assertVisible: "My Workspace"
+
+# ── 1. DOUBLE-TAP "My Goals" ─────────────────────────────────────────────────
+# Two consecutive taps on the same card. No waitForAnimationToEnd between them
+# so the second tap fires while the first navigation is starting.
+
+- tapOn: "My Goals"
+- tapOn: "My Goals"
+- waitForAnimationToEnd
+- assertVisible: "Q1"
+- takeScreenshot: "01a_goals_after_double_tap"
+
+# Press "‹" once. If only one push: lands on dashboard.
+# If two pushes: lands on Goals List again (duplicate entry).
+- tapOn: "‹"
+- waitForAnimationToEnd
+- takeScreenshot: "01b_after_first_back"
+# Both assertions must pass for the test to pass.
+- assertVisible: "My Workspace"
+- assertNotVisible: "Q1"
+# Confirm a second back does NOT navigate anywhere unexpected.
+# goBack() with stack.length === 1 is a no-op, so "‹" is hidden on the dashboard.
+# We use the hardware back here (platform default: background the app).
+# Re-launch to verify no state corruption.
+- pressKey: Back
+- launchApp
+- extendedWaitUntil:
+    visible:
+      text: "My Workspace"
+    timeout: 15000
+- takeScreenshot: "01c_root_intact_after_double_tap_test"
+
+# ── 2. DOUBLE-TAP "Daily Work Log" ───────────────────────────────────────────
+
+- tapOn: "Daily Work Log"
+- tapOn: "Daily Work Log"
+- waitForAnimationToEnd
+- assertVisible: "Daily Log"
+- takeScreenshot: "02a_daily_log_after_double_tap"
+- tapOn: "‹"
+- waitForAnimationToEnd
+- takeScreenshot: "02b_after_first_back"
+- assertVisible: "My Workspace"
+- assertNotVisible: "Daily Log"
+
+# ── 3. DOUBLE-TAP 🔔 NOTIFICATIONS BUTTON ────────────────────────────────────
+# The 🔔 is in the header — always reachable regardless of which tab is active.
+
+- tapOn: "🔔"
+- tapOn: "🔔"
+- waitForAnimationToEnd
+- assertVisible: "Notifications"
+- takeScreenshot: "03a_notifications_after_double_tap"
+- tapOn: "‹"
+- waitForAnimationToEnd
+- takeScreenshot: "03b_after_first_back"
+- assertVisible: "My Workspace"
+- assertNotVisible: "Notifications"
+
+# ── 4. DOUBLE-TAP ON ACTIONS TAB — VERIFY NO STACK PUSH ─────────────────────
+# Dashboard tabs (Overview / Analysis / Actions) switch local state only — they
+# do NOT call navigate(). Double-tapping a tab should NEVER push a stack entry.
+# After double-tapping, pressing "‹" should NOT be possible (no back button on
+# the dashboard). Verify the dashboard is intact and no back button is shown.
+
+- tapOn: "Actions"
+- tapOn: "Actions"
+- waitForAnimationToEnd
+- assertVisible: "Actions"
+- assertNotVisible: "‹"
+- takeScreenshot: "04_actions_tab_double_tap_no_stack_push"
+# If "‹" is visible here, the tab tap incorrectly pushed a stack entry.
+
+# ── 5. RAPID SEQUENCE — NAVIGATE THEN IMMEDIATELY NAVIGATE AGAIN ─────────────
+# A different double-push pattern: tap card A, then before it fully loads tap
+# card B. Should end up on B with stack [Dashboard → B], not [Dashboard → A → B].
+
+- tapOn: "Overview"
+- waitForAnimationToEnd
+- tapOn: "My Goals"
+- tapOn: "AI Performance Reports"
+- waitForAnimationToEnd
+- takeScreenshot: "05a_rapid_sequence_result"
+# We may be on either Goals List or AI Reports depending on which registered first.
+# The key test: pressing "‹" once should go back to the dashboard.
+- tapOn: "‹"
+- waitForAnimationToEnd
+- assertVisible: "My Workspace"
+- takeScreenshot: "05b_rapid_sequence_after_one_back"
+# If "‹" is still visible (we're on a secondary screen), two screens were pushed.

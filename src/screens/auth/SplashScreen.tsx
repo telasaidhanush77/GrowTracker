@@ -1,39 +1,11 @@
 import { useMemo } from 'react';
-import { SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { GrowMark } from '../../components/GrowMark';
+import { RoleIcon } from '../../components/RoleIcon';
 import { useTheme } from '../../context/ThemeContext';
 import { Radius, Shadow, Spacing } from '../../theme';
 import type { ColorPalette } from '../../theme';
 import { Role } from '../../types';
-
-// ---------- unique brand mark ----------
-// Three ascending bars symbolising growth — no text, no "GT"
-function GrowMark({ size, isDark }: { size: number; isDark: boolean }) {
-  const bg    = isDark ? '#ECECEC' : '#111111';
-  const fg    = isDark ? '#0A0A0A' : '#FFFFFF';
-  const bar   = Math.round(size * 0.13);
-  const gap   = Math.round(size * 0.08);
-  const padB  = Math.round(size * 0.17);
-  const r     = Math.round(size * 0.26);
-  const heights = [Math.round(size * 0.30), Math.round(size * 0.52), Math.round(size * 0.74)];
-
-  return (
-    <View style={{ width: size, height: size, borderRadius: r, backgroundColor: bg, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: padB }}>
-      {/* peak dot above tallest bar */}
-      <View style={{
-        position: 'absolute',
-        bottom: padB + heights[2] + Math.round(bar * 0.55),
-        right: padB - bar * 0.1,
-        width: Math.round(bar * 0.7), height: Math.round(bar * 0.7),
-        borderRadius: bar, backgroundColor: fg, opacity: 0.55,
-      }} />
-      <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap }}>
-        {heights.map((h, i) => (
-          <View key={i} style={{ width: bar, height: h, backgroundColor: fg, borderRadius: bar }} />
-        ))}
-      </View>
-    </View>
-  );
-}
 
 interface Props {
   onSelectRole: (role: Role) => void;
@@ -41,32 +13,13 @@ interface Props {
 
 const ROLES: {
   role: Role;
-  icon: string;
   title: string;
-  desc: string;
+  subtitle: string;
   strip: (C: ColorPalette) => string;
 }[] = [
-  {
-    role: 'admin',
-    icon: '🛡',
-    title: 'Admin',
-    desc: 'Manage the organisation, onboard users & oversee the system',
-    strip: C => C.adminPrimary,
-  },
-  {
-    role: 'manager',
-    icon: '👤',
-    title: 'Manager',
-    desc: 'Set goals, review evidence & coach your team to success',
-    strip: C => C.managerPrimary,
-  },
-  {
-    role: 'employee',
-    icon: '📈',
-    title: 'Employee',
-    desc: 'View goals, submit progress & track your growth journey',
-    strip: C => C.employeePrimary,
-  },
+  { role: 'admin',    title: 'Admin',    subtitle: 'System administrator',  strip: C => C.adminPrimary    },
+  { role: 'manager',  title: 'Manager',  subtitle: 'Reporting manager',     strip: C => C.managerPrimary  },
+  { role: 'employee', title: 'Employee', subtitle: 'Team member',           strip: C => C.employeePrimary },
 ];
 
 export default function SplashScreen({ onSelectRole }: Props) {
@@ -75,23 +28,22 @@ export default function SplashScreen({ onSelectRole }: Props) {
 
   return (
     <SafeAreaView style={styles.root}>
-      <View style={styles.inner}>
+      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+      {/* ── Logo centered in upper portion ── */}
+      <View style={styles.heroSection}>
+        <GrowMark size={84} isDark={isDark} />
+        <Text style={styles.appName}>GrowTracker</Text>
+        <Text style={styles.tagline}>Track growth · Drive results</Text>
+      </View>
 
-        {/* ── Logo section ── */}
-        <View style={styles.heroSection}>
-          <GrowMark size={76} isDark={isDark} />
-          <Text style={styles.appName}>GrowTracker</Text>
-          <Text style={styles.tagline}>Track growth · Drive results</Text>
-        </View>
-
-        {/* ── Divider ── */}
+      {/* ── Role cards anchored to bottom ── */}
+      <View style={styles.cardsSection}>
         <View style={styles.dividerRow}>
           <View style={styles.dividerLine} />
           <Text style={styles.dividerLabel}>SIGN IN AS</Text>
           <View style={styles.dividerLine} />
         </View>
 
-        {/* ── Role cards ── */}
         <View style={styles.cardsWrap}>
           {ROLES.map(r => (
             <TouchableOpacity
@@ -100,18 +52,14 @@ export default function SplashScreen({ onSelectRole }: Props) {
               onPress={() => onSelectRole(r.role)}
               activeOpacity={0.78}
             >
-              {/* left accent strip */}
               <View style={[styles.strip, { backgroundColor: r.strip(colors) }]} />
-
               <View style={[styles.iconWrap, { backgroundColor: r.strip(colors) + '18' }]}>
-                <Text style={styles.icon}>{r.icon}</Text>
+                <RoleIcon role={r.role} size={24} color={r.strip(colors)} />
               </View>
-
               <View style={styles.info}>
                 <Text style={styles.roleTitle}>{r.title}</Text>
-                <Text style={styles.roleDesc}>{r.desc}</Text>
+                <Text style={styles.roleSub}>{r.subtitle}</Text>
               </View>
-
               <Text style={styles.arrow}>›</Text>
             </TouchableOpacity>
           ))}
@@ -119,6 +67,7 @@ export default function SplashScreen({ onSelectRole }: Props) {
 
         <Text style={styles.footer}>GrowTracker · Performance Management</Text>
       </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -126,26 +75,33 @@ export default function SplashScreen({ onSelectRole }: Props) {
 function createStyles(C: ColorPalette) {
   return StyleSheet.create({
     root: { flex: 1, backgroundColor: C.bg },
-    inner: {
-      flex: 1,
-      paddingHorizontal: Spacing.xl,
-      paddingTop: Spacing.xxxl,
-      paddingBottom: Spacing.lg,
-      justifyContent: 'space-between',
-    },
+    scrollContent: { flexGrow: 1 },
 
-    // Hero
-    heroSection: { alignItems: 'center', gap: 10 },
+    // Hero — takes all remaining space, logo centered within it
+    heroSection: {
+      flex: 1,
+      minHeight: 160,
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 12,
+      paddingHorizontal: Spacing.xl,
+    },
     appName: {
-      fontSize: 32, fontWeight: '900', color: C.textPrimary,
-      letterSpacing: -1, marginTop: 4,
+      fontSize: 36, fontWeight: '900', color: C.textPrimary,
+      letterSpacing: -1,
     },
     tagline: { fontSize: 13, color: C.textMuted, letterSpacing: 0.3 },
+
+    // Cards section — anchored at bottom
+    cardsSection: {
+      paddingHorizontal: Spacing.xl,
+      paddingBottom: Spacing.xxxl,
+      gap: Spacing.lg,
+    },
 
     // Divider
     dividerRow: {
       flexDirection: 'row', alignItems: 'center', gap: 10,
-      paddingHorizontal: 4,
     },
     dividerLine: { flex: 1, height: 1, backgroundColor: C.border },
     dividerLabel: {
@@ -172,12 +128,12 @@ function createStyles(C: ColorPalette) {
       margin: 14, marginRight: 10,
     },
     icon: { fontSize: 20 },
-    info: { flex: 1, paddingVertical: 14, paddingRight: 4 },
+    info: { flex: 1, paddingVertical: 12, paddingRight: 4 },
     roleTitle: {
-      fontSize: 16, fontWeight: '800', color: C.textPrimary, marginBottom: 2,
+      fontSize: 16, fontWeight: '800', color: C.textPrimary,
     },
-    roleDesc: {
-      fontSize: 12, color: C.textSecondary, lineHeight: 16,
+    roleSub: {
+      fontSize: 11, color: C.textMuted, marginTop: 1,
     },
     arrow: {
       fontSize: 22, color: C.textMuted, paddingRight: 16, fontWeight: '300',

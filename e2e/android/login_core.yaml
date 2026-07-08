@@ -1,0 +1,94 @@
+# e2e/android/login_core.yaml — Core login flow (Android)
+#
+# WHAT THIS TESTS (Android-specific):
+#   1. The login form is reachable from the Splash screen.
+#   2. Fields are visible during input — on Android, KeyboardAvoidingView has
+#      no behavior set (behavior=undefined), so the system window-resize mode
+#      handles scroll. Verify fields are not obscured.
+#   3. Submitting valid credentials navigates to the Employee Dashboard.
+#   4. Logging out returns to the role-selector Splash screen.
+#
+# NOTE: Back from Login and Back from Dashboard both exit the app
+#       (navigation uses replace at auth boundaries — standard Android behaviour).
+#       The test does not assert on hardware-Back at these roots.
+#
+# PREREQUISITES:
+#   - Android emulator or physical device connected via ADB
+#   - App installed with appId com.growtracker.app
+#   - Test account available via environment variables EMPLOYEE_USER / EMPLOYEE_PASS
+#
+# RUN:
+#   maestro test e2e/android/login_core.yaml
+#   maestro test --tag android e2e/           # run all Android-tagged flows
+#
+# Requires Maestro >= 1.37.0 for tags support.
+
+appId: com.growtracker.app
+tags:
+  - android
+---
+
+# ── Launch ────────────────────────────────────────────────────────────────────
+
+- launchApp:
+    clearState: true
+
+- extendedWaitUntil:
+    visible:
+      text: "Employee"
+    timeout: 90000
+
+# ── Role selection ────────────────────────────────────────────────────────────
+
+- tapOn: "Employee"
+- assertVisible: "Employee Portal"
+- assertVisible: "Welcome back"
+
+# ── Identifier field ──────────────────────────────────────────────────────────
+# On Android, the system adjusts window size when the keyboard opens (resize
+# mode). The form should scroll so the focused field stays visible — this is
+# handled by the ScrollView inside the form, not by KAV.
+
+- tapOn:
+    text: "e.g. john.doe or EMP-0001"
+- waitForAnimationToEnd
+- takeScreenshot: "android_03_identifier_focused"
+# Expected: identifier field visible above the keyboard.
+
+- inputText: "${EMPLOYEE_USER}"
+- takeScreenshot: "android_04_identifier_typed"
+
+# ── Password field ────────────────────────────────────────────────────────────
+
+- tapOn:
+    text: "Enter your password"
+- waitForAnimationToEnd
+- takeScreenshot: "android_05_password_focused"
+# Expected: password field visible above the keyboard.
+
+- inputText: "${EMPLOYEE_PASS}"
+- hideKeyboard
+- takeScreenshot: "android_06_password_filled"
+
+# ── Submit ────────────────────────────────────────────────────────────────────
+
+- tapOn: "Sign In"
+
+- extendedWaitUntil:
+    visible:
+      text: "Overview"
+    timeout: 15000
+
+- assertVisible: "Overview"
+- assertVisible: "Performance Score"
+- takeScreenshot: "android_07_dashboard"
+
+# ── Logout ────────────────────────────────────────────────────────────────────
+
+- tapOn: "···"
+- waitForAnimationToEnd
+- tapOn: "Sign Out"
+- waitForAnimationToEnd
+
+- assertVisible: "Employee"
+- takeScreenshot: "android_09_after_logout"

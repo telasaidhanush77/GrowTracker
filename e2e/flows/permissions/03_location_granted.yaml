@@ -1,0 +1,31 @@
+# 03_location_granted.yaml
+# Location permission — GRANTED
+#
+# WHAT THIS TESTS:
+#   When foreground location permission is pre-granted:
+#   1. The app launches and logs in without crashing
+#   2. The dashboard is accessible
+#
+# NOTE: The app does not currently display location-dependent UI on any screen
+# reachable from the employee dashboard. This flow is a smoke test to confirm:
+#   - The permission grant does not cause startup crashes
+#   - The app is stable when location is available
+#
+# When a location-dependent feature is added (e.g. geotag on daily log entry),
+# extend this flow to reach that screen and verify the location is used.
+#
+# CREDENTIALS: Set EMPLOYEE_USER and EMPLOYEE_PASS in e2e/.env
+
+appId: com.growtracker.app
+---
+
+- launchApp:
+    clearState: true
+    permissions:
+      location: allow
+
+- runFlow: "../../helpers/login_employee.yaml"
+
+- assertVisible: "My Workspace"
+- takeScreenshot: "01a_location_granted_dashboard"
+- assertNotVisible: "Something went wrong"

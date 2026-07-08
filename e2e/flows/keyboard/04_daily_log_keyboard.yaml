@@ -1,0 +1,89 @@
+# 04_daily_log_keyboard.yaml — Daily Log form keyboard behavior
+#
+# WHAT THIS TESTS:
+#   1. Task description field is not covered by the keyboard — screenshot on focus.
+#   2. Enter key ("Done") on the task field adds the task and keeps focus —
+#      POSITIVE CASE: returnKeyType="done" + onSubmitEditing={addTask} ARE set.
+#      This is the reference for how other forms should behave.
+#   3. The notes field (multiline) opens a full-keyboard view — screenshot.
+#   4. Tapping outside the notes field dismisses the keyboard.
+#
+# SCREENSHOTS: Saved to the Maestro output directory.
+#
+# Unlike the auth screens, DailyLogScreen correctly uses:
+#   returnKeyType="done" and onSubmitEditing={addTask} on the task input.
+# Use these screenshots as the "correct" reference when fixing the auth forms.
+
+appId: com.growtracker.app
+---
+
+# ── Log in and navigate to Daily Work Log ────────────────────────────────────
+
+- launchApp:
+    clearState: true
+- runFlow: "../../helpers/login_employee.yaml"
+- assertVisible: "Dashboard"
+- tapOn: "Daily Work Log"
+- assertVisible: "Daily Log"
+- assertVisible: "Tasks Completed"
+
+# ── FIELD 1: Task Description (returnKeyType="done" — CORRECT BEHAVIOR) ───────
+
+- tapOn:
+    text: "Describe a task you completed..."
+- waitForAnimationToEnd
+- takeScreenshot: "01_daily_log_task_focused"
+# Expected: task input visible above keyboard.
+# The "Tasks Completed" section and the "+" button should still be visible.
+
+- inputText: "Completed keyboard behavior Maestro test"
+- takeScreenshot: "02_daily_log_task_typed"
+
+# ── DONE KEY TEST (POSITIVE REFERENCE — this SHOULD work) ────────────────────
+# returnKeyType="done" + onSubmitEditing={addTask} are set.
+# Pressing Enter adds the task to the list without tapping the "+" button.
+- pressKey: Enter
+- waitForAnimationToEnd
+- takeScreenshot: "03_daily_log_task_enter_done"
+# Expected: task appears in the "Tasks Completed" list, input clears, keyboard may stay.
+# This is the desired behavior for ALL form fields — compare to signup/login gaps.
+
+- assertVisible: "Completed keyboard behavior Maestro test"
+
+# ── FIELD 2: Notes (multiline TextInput — different keyboard interaction) ──────
+
+- scrollUntilVisible:
+    element:
+      text: "Any additional notes"
+    direction: DOWN
+    timeout: 5000
+- tapOn:
+    text: "Any additional notes"
+- waitForAnimationToEnd
+- takeScreenshot: "04_daily_log_notes_focused"
+# Multiline inputs show a full-size keyboard without a special action key.
+# The notes field does not have returnKeyType or onSubmitEditing (correct
+# for a multiline field — Enter inserts a line break, not a submit action).
+
+- inputText: "Notes from the keyboard behavior test run."
+- takeScreenshot: "05_daily_log_notes_typed"
+
+# ── TAP OUTSIDE TO DISMISS KEYBOARD ──────────────────────────────────────────
+# Tap the "Daily Log" heading (plain Text, non-touchable) to dismiss keyboard.
+- tapOn:
+    text: "Daily Log"
+- waitForAnimationToEnd
+- takeScreenshot: "06_daily_log_keyboard_dismissed"
+# Expected: keyboard gone, full form visible.
+
+# ── SAVE BUTTON REACHABLE WITHOUT SCROLLING ───────────────────────────────────
+# After dismissing the keyboard, "Save Daily Log" should be visible at the bottom.
+- assertVisible: "Save Daily Log"
+- takeScreenshot: "07_daily_log_save_visible"
+# If "Save Daily Log" is not visible here, the form layout needs adjustment
+# to ensure the CTA is reachable once the keyboard is dismissed.
+
+# ── VERIFY NO CRASH ───────────────────────────────────────────────────────────
+
+- assertVisible: "Daily Log"
+- takeScreenshot: "08_daily_log_final_state"

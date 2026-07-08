@@ -1,0 +1,25 @@
+appId: com.growtracker.app
+---
+- launchApp:
+    clearState: true
+
+- runFlow: "../helpers/login_employee.yaml"
+
+# Navigate to goals from the My Goals card on the dashboard
+- tapOn: "My Goals"
+
+# Q1 tab is visible by default
+- assertVisible: "Q1"
+- assertVisible: "Q2"
+
+# Filter chips exist
+- assertVisible: "All"
+- assertVisible: "Not Started"
+
+# Switch to Q2 tab
+- tapOn: "Q2"
+- assertVisible: "Q2"
+
+# Back to dashboard
+- tapOn: "‹"
+- assertVisible: "Performance Score"

@@ -1,0 +1,93 @@
+# e2e/ios/login_core.yaml — Core login flow (iOS)
+#
+# WHAT THIS TESTS (iOS-specific):
+#   1. The login form is reachable from the Splash screen.
+#   2. Both fields are visible above the keyboard when focused — relies on
+#      KeyboardAvoidingView behavior="padding" which is active only on iOS.
+#   3. Submitting valid credentials navigates to the Employee Dashboard.
+#   4. Logging out returns to the Splash screen.
+#
+# STATUS: Flow structure verified passing on Android (same assertion chain).
+#         Run on macOS + Simulator to confirm iOS KAV screenshot steps.
+#
+# PREREQUISITES:
+#   - App installed with appId com.growtracker.app
+#   - Test account available via environment variables EMPLOYEE_USER / EMPLOYEE_PASS
+#
+# RUN:
+#   maestro test e2e/ios/login_core.yaml
+#   maestro test --tag ios e2e/                # run all iOS-tagged flows
+#
+# Requires Maestro >= 1.37.0 for tags support.
+
+appId: com.growtracker.app
+tags:
+  - ios
+---
+
+# ── Launch ────────────────────────────────────────────────────────────────────
+
+- launchApp:
+    clearState: true
+
+- extendedWaitUntil:
+    visible:
+      text: "Employee"
+    timeout: 30000
+
+# ── Role selection ────────────────────────────────────────────────────────────
+
+- tapOn: "Employee"
+- assertVisible: "Employee Portal"
+- assertVisible: "Welcome back"
+
+# ── Identifier field — verify KAV lifts the form on iOS ──────────────────────
+# On iOS, KeyboardAvoidingView behavior="padding" shifts the form up so content
+# above the focused field remains visible.
+
+- tapOn:
+    text: "e.g. john.doe or EMP-0001"
+- waitForAnimationToEnd
+- takeScreenshot: "ios_01_identifier_focused"
+# Expected: form heading ("Welcome back") and identifier field are both visible
+# above the keyboard. The Sign In button may be hidden below the keyboard —
+# that is expected and acceptable because the KAV pushes content up, not down.
+
+- inputText: "${EMPLOYEE_USER}"
+- takeScreenshot: "ios_02_identifier_typed"
+
+# ── Password field ────────────────────────────────────────────────────────────
+
+- tapOn:
+    text: "Enter your password"
+- waitForAnimationToEnd
+- takeScreenshot: "ios_03_password_focused"
+# Expected: password field is visible above the keyboard.
+# The "Forgot password?" link should be visible just above the keyboard edge.
+
+- inputText: "${EMPLOYEE_PASS}"
+- hideKeyboard
+- takeScreenshot: "ios_04_password_filled"
+
+# ── Submit ────────────────────────────────────────────────────────────────────
+
+- tapOn: "Sign In"
+
+- extendedWaitUntil:
+    visible:
+      text: "Overview"
+    timeout: 15000
+
+- assertVisible: "Overview"
+- assertVisible: "Performance Score"
+- takeScreenshot: "ios_05_dashboard"
+
+# ── Logout — verify return to Splash ─────────────────────────────────────────
+
+- tapOn: "···"
+- waitForAnimationToEnd
+- tapOn: "Sign Out"
+- waitForAnimationToEnd
+
+- assertVisible: "Employee"
+- takeScreenshot: "ios_06_after_logout"

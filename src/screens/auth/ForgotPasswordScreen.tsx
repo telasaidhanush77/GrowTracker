@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react';
+﻿import { useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator, KeyboardAvoidingView, Platform,
-  StyleSheet, Text, TextInput, TouchableOpacity, View,
+  ActivityIndicator, Keyboard, KeyboardAvoidingView, Platform,
+  StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View,
 } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -35,17 +35,18 @@ interface Props {
 export default function ForgotPasswordScreen({ onBack, onSuccess }: Props) {
   const { colors, isDark } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
-  const { requestPasswordReset, verifyOTP, resetPassword } = useAuth();
+  const { resetPasswordRequest, resetPasswordCheckOtp, resetPasswordSetNewPassword } = useAuth();
 
   const [step, setStep] = useState<Step>('email');
   const [email, setEmail] = useState('');
-  const [devOTP, setDevOTP] = useState('');   // shown on screen — remove when real email is wired
   const [otp, setOTP] = useState('');
   const [newPwd, setNewPwd] = useState('');
   const [confirmPwd, setConfirmPwd] = useState('');
   const [showPwd, setShowPwd] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  const confirmPwdRef = useRef<TextInput>(null);
 
   async function handleRequestOTP() {
     setError('');
@@ -55,29 +56,28 @@ export default function ForgotPasswordScreen({ onBack, onSuccess }: Props) {
       return;
     }
     setLoading(true);
-    const res = await requestPasswordReset(email);
+    const res = await resetPasswordRequest(email);
     setLoading(false);
-    if (res.ok && res.otp) {
-      setDevOTP(res.otp); // TODO: remove this when a real email service is configured
+    if (res.ok) {
       setStep('otp');
     } else {
-      setError(res.error ?? 'Failed to send OTP. Please try again.');
+      setError(res.error ?? 'Failed to send reset code. Please try again.');
     }
   }
 
   async function handleVerifyOTP() {
     setError('');
     if (otp.trim().length !== 6) {
-      setError('Please enter the 6-digit OTP.');
+      setError('Please enter the 6-digit code from your email.');
       return;
     }
     setLoading(true);
-    const valid = await verifyOTP(email, otp);
+    const res = await resetPasswordCheckOtp(email, otp);
     setLoading(false);
-    if (valid) {
+    if (res.ok) {
       setStep('reset');
     } else {
-      setError('Invalid or expired OTP. Please request a new one.');
+      setError(res.error ?? 'Invalid or expired code. Please try again.');
     }
   }
 
@@ -86,7 +86,7 @@ export default function ForgotPasswordScreen({ onBack, onSuccess }: Props) {
     if (newPwd.length < 8) return setError('Password must be at least 8 characters.');
     if (newPwd !== confirmPwd) return setError('Passwords do not match.');
     setLoading(true);
-    const res = await resetPassword(email, otp, newPwd);
+    const res = await resetPasswordSetNewPassword(newPwd);
     setLoading(false);
     if (res.ok) {
       setStep('done');
@@ -99,8 +99,9 @@ export default function ForgotPasswordScreen({ onBack, onSuccess }: Props) {
 
   return (
     <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
       <View style={styles.content}>
-        <TouchableOpacity style={styles.backBtn} onPress={step === 'email' ? onBack : () => { setStep('email'); setError(''); }} activeOpacity={0.7}>
+        <TouchableOpacity style={styles.backBtn} onPress={step === 'email' ? onBack : () => { setStep('email'); setError(''); setOTP(''); setNewPwd(''); setConfirmPwd(''); }} activeOpacity={0.7}>
           <Text style={styles.backBtnText}>‹ {step === 'email' ? 'Back' : 'Start Over'}</Text>
         </TouchableOpacity>
 
@@ -128,6 +129,8 @@ export default function ForgotPasswordScreen({ onBack, onSuccess }: Props) {
               keyboardType="email-address"
               autoCapitalize="none"
               autoCorrect={false}
+              returnKeyType="done"
+              onSubmitEditing={handleRequestOTP}
             />
             <TouchableOpacity
               style={[styles.btn, loading && styles.btnDisabled]}
@@ -143,14 +146,7 @@ export default function ForgotPasswordScreen({ onBack, onSuccess }: Props) {
         {/* Step 2: OTP */}
         {step === 'otp' && (
           <View style={styles.stepContent}>
-            <Text style={styles.sub}>Enter the 6-digit code sent to <Text style={styles.emailHighlight}>{email}</Text></Text>
-
-            {/* TODO: Remove this dev block once a real email service (SendGrid, Resend, etc.) is integrated */}
-            <View style={styles.devBox}>
-              <Text style={styles.devTitle}>⚙ Development Mode</Text>
-              <Text style={styles.devSub}>Your OTP (would normally be emailed):</Text>
-              <Text style={styles.devOTP}>{devOTP}</Text>
-            </View>
+            <Text style={styles.sub}>Enter the 6-digit code sent to <Text style={styles.emailHighlight}>{email}</Text>. Check your inbox and spam folder.</Text>
 
             <Text style={styles.label}>Verification Code</Text>
             <TextInput
@@ -161,6 +157,8 @@ export default function ForgotPasswordScreen({ onBack, onSuccess }: Props) {
               placeholderTextColor={colors.textMuted}
               keyboardType="number-pad"
               maxLength={6}
+              returnKeyType="done"
+              onSubmitEditing={handleVerifyOTP}
             />
             <TouchableOpacity
               style={[styles.btn, loading && styles.btnDisabled]}
@@ -170,8 +168,8 @@ export default function ForgotPasswordScreen({ onBack, onSuccess }: Props) {
             >
               {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Verify Code</Text>}
             </TouchableOpacity>
-            <TouchableOpacity style={styles.resendBtn} onPress={handleRequestOTP} activeOpacity={0.7}>
-              <Text style={[styles.resendText, { color: colors.primary }]}>Didn't receive it? Resend</Text>
+            <TouchableOpacity style={styles.resendBtn} onPress={handleRequestOTP} activeOpacity={0.7} disabled={loading}>
+              <Text style={[styles.resendText, { color: loading ? colors.textMuted : colors.primary }]}>Didn't receive it? Resend</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -189,6 +187,9 @@ export default function ForgotPasswordScreen({ onBack, onSuccess }: Props) {
                 placeholder="Min. 8 characters"
                 placeholderTextColor={colors.textMuted}
                 secureTextEntry={!showPwd}
+                returnKeyType="next"
+                onSubmitEditing={() => confirmPwdRef.current?.focus()}
+                blurOnSubmit={false}
               />
               <TouchableOpacity style={styles.eyeBtn} onPress={() => setShowPwd(v => !v)}>
                 <Text style={styles.eyeIcon}>{showPwd ? '🙈' : '👁'}</Text>
@@ -196,12 +197,15 @@ export default function ForgotPasswordScreen({ onBack, onSuccess }: Props) {
             </View>
             <Text style={styles.label}>Confirm New Password</Text>
             <TextInput
+              ref={confirmPwdRef}
               style={[styles.input, confirmPwd.length > 0 && { borderColor: confirmPwd === newPwd ? colors.approved : colors.rejected }]}
               value={confirmPwd}
               onChangeText={setConfirmPwd}
               placeholder="Re-enter new password"
               placeholderTextColor={colors.textMuted}
               secureTextEntry={!showPwd}
+              returnKeyType="done"
+              onSubmitEditing={handleResetPassword}
             />
             <TouchableOpacity
               style={[styles.btn, loading && styles.btnDisabled]}
@@ -226,6 +230,7 @@ export default function ForgotPasswordScreen({ onBack, onSuccess }: Props) {
           </View>
         )}
       </View>
+      </TouchableWithoutFeedback>
     </KeyboardAvoidingView>
   );
 }
@@ -258,14 +263,6 @@ function createStyles(C: ColorPalette) {
     pwdInput: { paddingRight: 48 },
     eyeBtn: { position: 'absolute', right: 12, top: 0, bottom: 0, justifyContent: 'center' },
     eyeIcon: { fontSize: 18 },
-
-    devBox: {
-      backgroundColor: C.pendingBg, borderRadius: Radius.md, padding: 12, marginBottom: 16,
-      borderWidth: 1, borderColor: C.pending + '40',
-    },
-    devTitle: { fontSize: 11, fontWeight: '800', color: C.pending, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
-    devSub: { fontSize: 12, color: C.textSecondary, marginBottom: 4 },
-    devOTP: { fontSize: 28, fontWeight: '900', color: C.textPrimary, letterSpacing: 6 },
 
     btn: {
       backgroundColor: C.primary, borderRadius: Radius.lg,

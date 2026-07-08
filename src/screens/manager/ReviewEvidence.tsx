@@ -1,6 +1,8 @@
 import { useState, useMemo } from 'react';
 import {
-  ScrollView,
+  FlatList,
+  KeyboardAvoidingView,
+  Linking,
   StyleSheet,
   Text,
   TextInput,
@@ -29,13 +31,16 @@ export default function ReviewEvidence({ navigation, currentUserId }: ScreenProp
   const [feedbacks, setFeedbacks] = useState<Record<string, string>>({});
   const [ratings, setRatings] = useState<Record<string, number>>({});
 
-  const team = employees.filter(e => e.managerId === currentUserId && e.role === 'employee');
-  const teamGoals = goals.filter(g => team.some(e => e.id === g.employeeId));
-
-  const pendingGoals = teamGoals.filter(g => g.status === 'submitted');
-  const reviewedGoals = teamGoals.filter(
-    g => g.status === 'approved' || g.status === 'rejected',
-  );
+  // Memoized on the underlying data so typing in a feedback/rating field
+  // (which updates state every keystroke) does not re-filter the team goals.
+  const { pendingGoals, reviewedGoals } = useMemo(() => {
+    const team = employees.filter(e => e.managerId === currentUserId && e.role === 'employee');
+    const teamGoals = goals.filter(g => team.some(e => e.id === g.employeeId));
+    return {
+      pendingGoals: teamGoals.filter(g => g.status === 'submitted'),
+      reviewedGoals: teamGoals.filter(g => g.status === 'approved' || g.status === 'rejected'),
+    };
+  }, [employees, goals, currentUserId]);
 
   function handleApprove(goalId: string, employeeId: string, goalTitle: string) {
     const r = ratings[goalId];
@@ -44,17 +49,18 @@ export default function ReviewEvidence({ navigation, currentUserId }: ScreenProp
       return;
     }
     const feedback = feedbacks[goalId]?.trim() ?? '';
-    reviewEvidence(goalId, true, feedback, r);
-    addNotification({
-      recipientId: employeeId,
-      type: 'evidence_approved',
-      title: 'Evidence Approved ✓',
-      message: `Your submission for "${goalTitle}" has been approved with ${r} star${r !== 1 ? 's' : ''}!${feedback ? ` Feedback: "${feedback}"` : ''}`,
-      read: false,
-      createdAt: new Date().toISOString(),
-      relatedGoalId: goalId,
+    reviewEvidence(goalId, true, feedback, r, () => {
+      addNotification({
+        recipientId: employeeId,
+        type: 'evidence_approved',
+        title: 'Evidence Approved ✓',
+        message: `Your submission for "${goalTitle}" has been approved with ${r} star${r !== 1 ? 's' : ''}!${feedback ? ` Feedback: "${feedback}"` : ''}`,
+        read: false,
+        createdAt: new Date().toISOString(),
+        relatedGoalId: goalId,
+      });
+      showToast(`"${goalTitle}" approved with ${r}/5 stars. Employee notified.`, 'success', 'Evidence Approved');
     });
-    showToast(`"${goalTitle}" approved with ${r}/5 stars. Employee notified.`, 'success', 'Evidence Approved');
   }
 
   function handleReject(goalId: string, employeeId: string, goalTitle: string) {
@@ -63,23 +69,24 @@ export default function ReviewEvidence({ navigation, currentUserId }: ScreenProp
       showToast('Please provide feedback explaining why the evidence was rejected.', 'warning', 'Feedback Required');
       return;
     }
-    reviewEvidence(goalId, false, feedback);
-    addNotification({
-      recipientId: employeeId,
-      type: 'evidence_rejected',
-      title: 'Evidence Rejected',
-      message: `Your submission for "${goalTitle}" was rejected. Feedback: "${feedback}"`,
-      read: false,
-      createdAt: new Date().toISOString(),
-      relatedGoalId: goalId,
+    reviewEvidence(goalId, false, feedback, undefined, () => {
+      addNotification({
+        recipientId: employeeId,
+        type: 'evidence_rejected',
+        title: 'Evidence Rejected',
+        message: `Your submission for "${goalTitle}" was rejected. Feedback: "${feedback}"`,
+        read: false,
+        createdAt: new Date().toISOString(),
+        relatedGoalId: goalId,
+      });
+      showToast(`"${goalTitle}" rejected. Feedback sent to employee.`, 'info', 'Evidence Rejected');
     });
-    showToast(`"${goalTitle}" rejected. Feedback sent to employee.`, 'info', 'Evidence Rejected');
   }
 
   const displayGoals = tab === 'pending' ? pendingGoals : reviewedGoals;
 
   return (
-    <View style={styles.root}>
+    <KeyboardAvoidingView style={styles.root} behavior="padding">
       <Header
         title="Review Evidence"
         subtitle={`${pendingGoals.length} pending`}
@@ -104,11 +111,15 @@ export default function ReviewEvidence({ navigation, currentUserId }: ScreenProp
         ))}
       </View>
 
-      <ScrollView
+      <FlatList
+        data={displayGoals}
+        keyExtractor={goal => goal.id}
+        extraData={{ feedbacks, ratings, tab }}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
-      >
-        {displayGoals.length === 0 && (
+        keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets
+        ListEmptyComponent={
           <View style={styles.emptyState}>
             <Text style={styles.emptyIcon}>{tab === 'pending' ? '✅' : '📂'}</Text>
             <Text style={styles.emptyText}>
@@ -117,17 +128,20 @@ export default function ReviewEvidence({ navigation, currentUserId }: ScreenProp
                 : 'No reviewed submissions yet.'}
             </Text>
           </View>
-        )}
-
-        {displayGoals.map(goal => {
+        }
+        ListFooterComponent={<View style={{ height: 32 }} />}
+        renderItem={({ item: goal }) => {
           const emp = employees.find(e => e.id === goal.employeeId);
-          const ev = goal.evidence!;
+          const ev = goal.evidence;
+          if (!ev) return null;
           const cc = CATEGORY_CONFIG[goal.category];
           const pc = PRIORITY_CONFIG[goal.priority];
           const isPending = goal.status === 'submitted';
+          const daysSince = Math.floor((Date.now() - new Date(ev.submittedAt).getTime()) / 86400000);
+          const isAging = isPending && daysSince >= 3;
 
           return (
-            <View key={goal.id} style={styles.card}>
+            <View style={styles.card}>
               <View style={styles.cardHeader}>
                 <View style={[styles.avatar, { backgroundColor: colors.employeeLight }]}>
                   <Text style={[styles.avatarText, { color: colors.employeePrimary }]}>
@@ -171,8 +185,30 @@ export default function ReviewEvidence({ navigation, currentUserId }: ScreenProp
                 </View>
               )}
 
+              {ev.attachments && ev.attachments.length > 0 && (
+                <View style={styles.attachmentsBox}>
+                  <Text style={styles.attachmentsLabel}>📎 Attachments ({ev.attachments.length})</Text>
+                  {ev.attachments.map((a, i) => (
+                    <TouchableOpacity
+                      key={i}
+                      style={styles.attachmentRow}
+                      onPress={() => Linking.openURL(a.uri)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.attachmentIcon}>
+                        {a.mimeType.includes('pdf') ? '📄' : a.mimeType.includes('image') ? '🖼' : '📁'}
+                      </Text>
+                      <Text style={styles.attachmentName} numberOfLines={1}>{a.name}</Text>
+                      {a.size ? <Text style={styles.attachmentSize}>{(a.size / 1024).toFixed(0)} KB</Text> : null}
+                      <Text style={styles.attachmentOpen}>Open →</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
 
-              <Text style={styles.submittedAt}>Submitted {timeAgo(ev.submittedAt)}</Text>
+              <Text style={[styles.submittedAt, isAging && { color: colors.pending, fontWeight: '600' }]}>
+                {isAging ? `⏳ Pending ${daysSince}d — awaiting your review` : `Submitted ${timeAgo(ev.submittedAt)}`}
+              </Text>
 
               {!isPending && (
                 <View
@@ -207,18 +243,20 @@ export default function ReviewEvidence({ navigation, currentUserId }: ScreenProp
                 <View style={styles.actionArea}>
                   <View style={styles.divider} />
                   <Text style={styles.ratingPrompt}>Your rating for this work:</Text>
+                  <View style={styles.rubricRow}>
+                    {(['1★ Did not meet', '2★ Partially met', '3★ Met', '4★ Exceeded', '5★ Far exceeded'] as const).map((label, i) => (
+                      <Text key={i} style={[styles.rubricItem, (ratings[goal.id] ?? 0) === i + 1 && { color: colors.managerPrimary, fontWeight: '700' }]}>
+                        {label}
+                      </Text>
+                    ))}
+                  </View>
                   <View style={styles.ratingRow}>
                     {[1, 2, 3, 4, 5].map(s => (
                       <TouchableOpacity
                         key={s}
                         onPress={() => setRatings(prev => ({ ...prev, [goal.id]: s }))}
                       >
-                        <Text
-                          style={[
-                            styles.ratingStarLg,
-                            s <= (ratings[goal.id] ?? 0) && styles.ratingStarFilled,
-                          ]}
-                        >
+                        <Text style={[styles.ratingStarLg, s <= (ratings[goal.id] ?? 0) && styles.ratingStarFilled]}>
                           ★
                         </Text>
                       </TouchableOpacity>
@@ -231,9 +269,7 @@ export default function ReviewEvidence({ navigation, currentUserId }: ScreenProp
                   <TextInput
                     style={styles.feedbackInput}
                     value={feedbacks[goal.id] ?? ''}
-                    onChangeText={t =>
-                      setFeedbacks(prev => ({ ...prev, [goal.id]: t }))
-                    }
+                    onChangeText={t => setFeedbacks(prev => ({ ...prev, [goal.id]: t }))}
                     placeholder="Add feedback (required for rejection, optional for approval)"
                     placeholderTextColor={colors.textMuted}
                     multiline
@@ -260,11 +296,9 @@ export default function ReviewEvidence({ navigation, currentUserId }: ScreenProp
               )}
             </View>
           );
-        })}
-
-        <View style={{ height: 32 }} />
-      </ScrollView>
-    </View>
+        }}
+      />
+    </KeyboardAvoidingView>
   );
 }
 
@@ -322,6 +356,13 @@ function createStyles(C: ColorPalette) {
     star: { fontSize: 16, color: C.border },
     starFilled: { color: '#F59E0B' },
     submittedAt: { fontSize: 11, color: C.textMuted, marginBottom: 4 },
+    attachmentsBox: { backgroundColor: C.bg, borderRadius: Radius.sm, padding: 8, gap: 4, marginBottom: 8 },
+    attachmentsLabel: { fontSize: 12, fontWeight: '700', color: C.textSecondary, marginBottom: 2 },
+    attachmentRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 3 },
+    attachmentIcon: { fontSize: 14 },
+    attachmentName: { flex: 1, fontSize: 12, color: C.textPrimary },
+    attachmentSize: { fontSize: 10, color: C.textMuted },
+    attachmentOpen: { fontSize: 11, color: C.inProgress, fontWeight: '600' },
 
     reviewedBanner: { borderRadius: Radius.md, padding: 10, marginTop: 8 },
     reviewedFeedback: { fontSize: 12, color: C.textSecondary, marginTop: 4 },
@@ -329,6 +370,8 @@ function createStyles(C: ColorPalette) {
 
     actionArea: {},
     ratingPrompt: { fontSize: 13, fontWeight: '600', color: C.textSecondary, marginBottom: 6 },
+    rubricRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginBottom: 8 },
+    rubricItem: { fontSize: 10, color: C.textMuted, backgroundColor: C.bgElevated, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
     ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
     ratingStarLg: { fontSize: 32, color: C.border },
     ratingStarFilled: { color: '#F59E0B' },

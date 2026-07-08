@@ -1,5 +1,11 @@
 import { useRef } from 'react';
-import { Animated, StyleProp, TouchableWithoutFeedback, ViewStyle } from 'react-native';
+import {
+  AccessibilityRole,
+  Animated,
+  StyleProp,
+  TouchableWithoutFeedback,
+  ViewStyle,
+} from 'react-native';
 
 interface Props {
   onPress: () => void;
@@ -7,9 +13,21 @@ interface Props {
   children: React.ReactNode;
   disabled?: boolean;
   activeScale?: number;
+  accessibilityLabel?: string;
+  accessibilityRole?: AccessibilityRole;
+  accessibilityHint?: string;
 }
 
-export function AnimatedButton({ onPress, style, children, disabled = false, activeScale = 0.95 }: Props) {
+export function AnimatedButton({
+  onPress,
+  style,
+  children,
+  disabled = false,
+  activeScale = 0.95,
+  accessibilityLabel,
+  accessibilityRole,
+  accessibilityHint,
+}: Props) {
   const scale = useRef(new Animated.Value(1)).current;
 
   function onPressIn() {
@@ -36,6 +54,10 @@ export function AnimatedButton({ onPress, style, children, disabled = false, act
       onPressIn={onPressIn}
       onPressOut={onPressOut}
       disabled={disabled}
+      accessible
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole={accessibilityRole}
+      accessibilityHint={accessibilityHint}
     >
       <Animated.View style={[style, { transform: [{ scale }] }]}>
         {children}

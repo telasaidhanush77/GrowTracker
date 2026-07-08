@@ -1,12 +1,12 @@
-import { useMemo } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useMemo, useState } from 'react';
+import { DimensionValue, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Header from '../../components/Header';
 import { useApp } from '../../context/AppContext';
 import { useTheme } from '../../context/ThemeContext';
 import { Radius, Shadow, Spacing, Typography } from '../../theme';
 import type { ColorPalette } from '../../theme';
 import { Goal, ScreenProps } from '../../types';
-import { calcQuarterScore, CATEGORY_CONFIG, formatDate, STATUS_CONFIG } from '../../utils';
+import { calcCompletionRate, calcQuarterScore, CATEGORY_CONFIG, formatDate, STATUS_CONFIG } from '../../utils';
 
 export default function MyProgressScreen({ navigation, currentUserId }: ScreenProps) {
   const { employees, goals } = useApp();
@@ -21,6 +21,8 @@ export default function MyProgressScreen({ navigation, currentUserId }: ScreenPr
 
   const q1Score = calcQuarterScore(myGoals, 'Q1');
   const q2Score = calcQuarterScore(myGoals, 'Q2');
+  const q1CompletionRate = calcCompletionRate(myGoals, 'Q1');
+  const q2CompletionRate = calcCompletionRate(myGoals, 'Q2');
 
   const approvedGoals = myGoals.filter(g => g.status === 'approved');
   const rejectedGoals = myGoals.filter(g => g.status === 'rejected');
@@ -29,6 +31,8 @@ export default function MyProgressScreen({ navigation, currentUserId }: ScreenPr
   const avgRating = reviewedGoals.length > 0
     ? (reviewedGoals.reduce((s, g) => s + (g.managerRating ?? 0), 0) / reviewedGoals.length)
     : 0;
+
+  const [showFormula, setShowFormula] = useState(false);
 
   const scoreColor = (s: number) =>
     s >= 75 ? colors.approved : s >= 50 ? colors.pending : s > 0 ? colors.rejected : colors.textMuted;
@@ -84,6 +88,25 @@ export default function MyProgressScreen({ navigation, currentUserId }: ScreenPr
               </View>
             );
           })()}
+
+          <TouchableOpacity
+            style={styles.formulaToggle}
+            onPress={() => setShowFormula(v => !v)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.formulaToggleText}>
+              ℹ How is this score calculated? {showFormula ? '▲' : '▼'}
+            </Text>
+          </TouchableOpacity>
+          {showFormula && (
+            <View style={styles.formulaBox}>
+              <Text style={styles.formulaText}>
+                {'Score = Σ(goal weight × manager rating ÷ 5) ÷ total quarter weight × 100\n\n'}
+                {'Each approved goal is rated 1–5 ★ by your manager. Its weighted contribution is (weight × rating ÷ 5). The sum of all approved contributions is divided by the total weight of all your goals for the quarter.\n\n'}
+                {'Only approved goals contribute earned points. Pending, in-progress, and rejected submissions count toward total weight but not earned points.'}
+              </Text>
+            </View>
+          )}
         </View>
 
         {/* KPI strip */}
@@ -110,20 +133,27 @@ export default function MyProgressScreen({ navigation, currentUserId }: ScreenPr
 
         {/* Per-quarter goal breakdown */}
         {[
-          { label: 'Q1 Goal Performance', goals: q1Goals, score: q1Score },
-          { label: 'Q2 Goal Performance', goals: q2Goals, score: q2Score },
-        ].map(({ label, goals: qGoals, score }) => {
+          { label: 'Q1 Goal Performance', goals: q1Goals, score: q1Score, completionRate: q1CompletionRate },
+          { label: 'Q2 Goal Performance', goals: q2Goals, score: q2Score, completionRate: q2CompletionRate },
+        ].map(({ label, goals: qGoals, score, completionRate }) => {
           if (qGoals.length === 0) return null;
           const totalWeight = qGoals.reduce((s, g) => s + g.weight, 0);
           return (
             <View key={label}>
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>{label}</Text>
-                {score > 0 && (
-                  <View style={[styles.scorePill, { backgroundColor: scoreColor(score) + '22' }]}>
-                    <Text style={[styles.scorePillText, { color: scoreColor(score) }]}>{score}%</Text>
-                  </View>
-                )}
+                <View style={styles.pillRow}>
+                  {completionRate > 0 && (
+                    <View style={[styles.completionPill, { backgroundColor: colors.approvedBg }]}>
+                      <Text style={[styles.completionPillText, { color: colors.approved }]}>{completionRate}% done</Text>
+                    </View>
+                  )}
+                  {score > 0 && (
+                    <View style={[styles.scorePill, { backgroundColor: scoreColor(score) + '22' }]}>
+                      <Text style={[styles.scorePillText, { color: scoreColor(score) }]}>{score}% score</Text>
+                    </View>
+                  )}
+                </View>
               </View>
               {qGoals.map(goal => (
                 <GoalProgressCard
@@ -239,7 +269,7 @@ function GoalProgressCard({
         </View>
         <View style={{ flex: 1 }}>
           <Text style={styles.goalTitle}>{goal.title}</Text>
-          <Text style={styles.goalMeta}>{cc.label} · {goal.weight} cr · Due {formatDate(goal.targetDate)}</Text>
+          <Text style={styles.goalMeta}>{cc.label} · Due {formatDate(goal.targetDate)}</Text>
         </View>
         <View style={[styles.statusChip, { backgroundColor: sc.bg }]}>
           <Text style={[styles.statusChipText, { color: sc.color }]}>{sc.label}</Text>
@@ -256,7 +286,7 @@ function GoalProgressCard({
             </Text>
           </View>
           <View style={styles.ratingBarTrack}>
-            <View style={[styles.ratingBar, { width: `${ratingPct}%` as any, backgroundColor: barColor }]} />
+            <View style={[styles.ratingBar, { width: `${ratingPct}%` as DimensionValue, backgroundColor: barColor }]} />
           </View>
           {contribution !== null && (
             <Text style={[styles.contributionText, { color: barColor }]}>
@@ -315,6 +345,20 @@ function createStyles(C: ColorPalette) {
     deltaRow: { borderTopWidth: 1, padding: Spacing.md, alignItems: 'center' },
     deltaText: { fontSize: 13, fontWeight: '700', textAlign: 'center' },
     deltaTip: { fontSize: 11, textAlign: 'center', marginTop: 4, lineHeight: 16 },
+    formulaToggle: {
+      borderTopWidth: 1,
+      borderTopColor: C.divider,
+      padding: Spacing.md,
+      alignItems: 'center',
+    },
+    formulaToggleText: { fontSize: 12, color: C.textSecondary, fontWeight: '600' },
+    formulaBox: {
+      backgroundColor: C.bgElevated,
+      borderTopWidth: 1,
+      borderTopColor: C.divider,
+      padding: Spacing.md,
+    },
+    formulaText: { fontSize: 12, color: C.textSecondary, lineHeight: 18 },
 
     kpiStrip: {
       flexDirection: 'row',
@@ -339,8 +383,11 @@ function createStyles(C: ColorPalette) {
       marginTop: 4,
     },
     sectionTitle: { ...Typography.label, color: C.textMuted },
+    pillRow: { flexDirection: 'row', gap: 6, alignItems: 'center' },
     scorePill: { borderRadius: Radius.full, paddingHorizontal: 10, paddingVertical: 3 },
     scorePillText: { fontSize: 11, fontWeight: '800' },
+    completionPill: { borderRadius: Radius.full, paddingHorizontal: 10, paddingVertical: 3 },
+    completionPillText: { fontSize: 11, fontWeight: '700' },
 
     goalCard: {
       backgroundColor: C.card,

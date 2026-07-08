@@ -1,8 +1,24 @@
-import { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react';
-import { goalStore, logStore, notifStore } from '../auth/storage';
+import { createContext, ReactNode, useCallback, useContext, useEffect, useRef } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from './AuthContext';
-import { DailyLog, DailyTask, Employee, EmployeeStatus, Evidence, Goal, Notification, NotificationType, StoredUser } from '../types';
+import { useToast } from './ToastContext';
+import {
+  useGoals, useAddGoal, useUpdateGoal, useDeleteGoal,
+  useSubmitEvidence, useReviewEvidence, goalKeys,
+} from '../hooks/useGoals';
+import {
+  useNotifications, useAddNotification,
+  useMarkNotifRead, useMarkAllRead, notifKeys,
+} from '../hooks/useNotifications';
+import { useDailyLogs, useSaveDailyLog, logKeys } from '../hooks/useDailyLogs';
+import { supabase } from '../lib/supabase';
+import { sendExpoPush } from '../lib/push';
+import type {
+  DailyLog, DailyTask, Employee, EmployeeStatus,
+  Evidence, Goal, GoalStatus, Notification, NotificationType, StoredUser,
+} from '../types';
 
+// ── context shape — identical to the old interface so screens need no changes ──
 interface AppContextType {
   employees: Employee[];
   goals: Goal[];
@@ -14,8 +30,8 @@ interface AppContextType {
   addGoal: (goal: Omit<Goal, 'id' | 'createdAt' | 'updatedAt'>) => Goal;
   updateGoal: (goalId: string, updates: Partial<Goal>) => void;
   deleteGoal: (goalId: string) => void;
-  submitEvidence: (goalId: string, data: Omit<Evidence, 'id' | 'status'>) => void;
-  reviewEvidence: (goalId: string, approved: boolean, feedback: string, managerRating?: number) => void;
+  submitEvidence: (goalId: string, data: Omit<Evidence, 'id' | 'status'>) => Promise<void>;
+  reviewEvidence: (goalId: string, approved: boolean, feedback: string, managerRating?: number, onSuccess?: () => void) => void;
   markNotifRead: (notifId: string) => void;
   markAllRead: (recipientId: string) => void;
   addNotification: (notif: Omit<Notification, 'id'>) => void;
@@ -27,86 +43,95 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | null>(null);
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const { users, updateUser, removeUser } = useAuth();
+  const { users, updateUser, removeUser, currentUser } = useAuth();
+  const { showToast } = useToast();
+  const qc = useQueryClient();
 
-  const [goals, setGoals] = useState<Goal[]>([]);
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [dailyLogs, setDailyLogs] = useState<DailyLog[]>([]);
-  const [dataLoaded, setDataLoaded] = useState(false);
+  // ── data queries (cached + persisted by React Query) ──────────
+  const { data: goals = [] }         = useGoals();
+  const { data: notifications = [] } = useNotifications();
+  const { data: dailyLogs = [] }     = useDailyLogs();
 
-  // Load persisted goals / notifications / logs once on mount
+  // ── mutations ──────────────────────────────────────────────────
+  const addGoalMutation         = useAddGoal();
+  const updateGoalMutation      = useUpdateGoal();
+  const deleteGoalMutation      = useDeleteGoal();
+  const submitEvidenceMutation  = useSubmitEvidence();
+  const reviewEvidenceMutation  = useReviewEvidence();
+  const addNotifMutation        = useAddNotification();
+  const markReadMutation        = useMarkNotifRead();
+  const markAllReadMutation     = useMarkAllRead();
+  const saveLogMutation         = useSaveDailyLog();
+
+  // Tracks employees already processed for FY auto-complete within this session
+  const fyProcessedRef = useRef<Set<string>>(new Set());
+
+  // ── auto-complete FY when all goals reach a final state ────────
   useEffect(() => {
-    (async () => {
-      const [g, n, l] = await Promise.all([
-        goalStore.getAll(),
-        notifStore.getAll(),
-        logStore.getAll(),
-      ]);
-      setGoals(g);
-      setNotifications(n);
-      setDailyLogs(l);
-      setDataLoaded(true);
-    })();
-  }, []);
+    if (!goals.length || !users.length) return;
+    const activeEmployees = users.filter(u => u.role === 'employee' && u.status === 'active');
 
-  // Persist goals whenever they change (after initial load)
-  useEffect(() => { if (dataLoaded) goalStore.save(goals); }, [goals, dataLoaded]);
-  useEffect(() => { if (dataLoaded) notifStore.save(notifications); }, [notifications, dataLoaded]);
-  useEffect(() => { if (dataLoaded) logStore.save(dailyLogs); }, [dailyLogs, dataLoaded]);
-
-  // Expose users as Employee[] (StoredUser satisfies Employee structurally)
-  const employees: Employee[] = users;
-
-  // Auto-complete FY when all of an employee's goals reach a final state
-  useEffect(() => {
-    const activeEmployees = employees.filter(e => e.role === 'employee' && e.status === 'active');
-    if (activeEmployees.length === 0) return;
-
-    const now = new Date().toISOString();
     activeEmployees.forEach(emp => {
+      if (fyProcessedRef.current.has(emp.id)) return;
+
       const empGoals = goals.filter(g => g.employeeId === emp.id);
-      if (empGoals.length === 0) return;
+      if (!empGoals.length) return;
       const allFinal = empGoals.every(g => g.status === 'approved' || g.status === 'rejected');
       if (!allFinal) return;
 
-      updateUser(emp.id, { status: 'completed_fiscal_year' as EmployeeStatus });
-      const mgr = employees.find(e => e.id === emp.managerId);
-      const ts = Date.now();
-      const newNotifs: Notification[] = [
-        {
-          id: `notif-fy-e-${ts}-${emp.id}`,
-          recipientId: emp.id,
-          type: 'fiscal_year_complete' as NotificationType,
-          title: 'FY 2026 Complete',
-          message: 'All your goals have been reviewed. Your Fiscal Year 2026 is now complete!',
-          read: false,
-          createdAt: now,
-        },
-      ];
-      if (mgr) {
-        newNotifs.push({
-          id: `notif-fy-m-${ts}-${emp.id}`,
-          recipientId: mgr.id,
-          type: 'fiscal_year_complete' as NotificationType,
-          title: `${emp.name.split(' ')[0]}'s FY Complete`,
-          message: `All goals for ${emp.name} have been reviewed. Their FY 2026 is now finalized.`,
-          read: false,
-          createdAt: now,
-        });
-      }
-      setNotifications(prev => [...newNotifs, ...prev]);
+      fyProcessedRef.current.add(emp.id);
+      // Status update only — notifications are created by the handle_fy_complete DB trigger
+      updateUser(emp.id, { status: 'completed_fiscal_year' as EmployeeStatus }).catch(onMutationError);
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [goals]);
+  }, [goals, users]);
+
+  // ── Realtime push relay ────────────────────────────────────────
+  // When a DB trigger inserts a notification, the currently-online user
+  // relays a push to the recipient if they manage them (or are admin).
+  useEffect(() => {
+    if (!users.length || !currentUser) return;
+
+    const channel = supabase
+      .channel('notification-push-relay')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'notifications' },
+        (payload) => {
+          const row = payload.new as {
+            recipient_id: string;
+            title: string;
+            message: string;
+            type: string;
+            related_goal_id: string | null;
+          };
+          const recipient = users.find(u => u.id === row.recipient_id);
+          if (!recipient?.pushToken) return;
+          // Skip self — current user is already in the app and sees the notification inline.
+          if (recipient.id === currentUser.id) return;
+          sendExpoPush(recipient.pushToken, {
+            title: row.title,
+            body: row.message,
+            data: { type: row.type, goalId: row.related_goal_id ?? undefined },
+          });
+        },
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [users, currentUser?.id, currentUser?.role]);
+
+  // ── employees (pulled from AuthContext) ────────────────────────
+  const employees: Employee[] = users;
 
   function emailExists(email: string): boolean {
     return users.some(u => u.email.toLowerCase() === email.trim().toLowerCase());
   }
 
-  // Kept for backward compatibility — admin onboarding now uses AuthContext.createUser directly
+  // Kept for API compatibility — admin onboarding uses AuthContext.createUser directly
   function addEmployee(emp: Omit<Employee, 'id'>): Employee {
-    const stub: Employee = { ...emp, id: `emp-${Date.now()}` };
-    return stub;
+    return { ...emp, id: `stub-${Date.now()}` };
   }
 
   const updateEmployee = useCallback(
@@ -115,88 +140,123 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
 
   const removeEmployee = useCallback(
-    (id: string) => {
-      removeUser(id);
-      setGoals(prev => prev.filter(g => g.employeeId !== id));
-      setNotifications(prev => prev.filter(n => n.recipientId !== id && n.relatedEmployeeId !== id));
+    async (id: string) => {
+      await removeUser(id);
+      // Delete orphaned rows from Supabase so they don't reappear after cache TTL expires
+      await supabase.from('goals').delete().eq('employee_id', id);
+      await supabase.from('daily_logs').delete().eq('employee_id', id);
+      await supabase.from('notifications').delete()
+        .or(`recipient_id.eq.${id},related_employee_id.eq.${id}`);
+      qc.invalidateQueries({ queryKey: goalKeys.all });
+      qc.invalidateQueries({ queryKey: notifKeys.all });
+      qc.invalidateQueries({ queryKey: logKeys.all });
     },
-    [removeUser],
+    [removeUser, qc],
   );
 
+  const onMutationError = useCallback(() => {
+    showToast('Something went wrong. Check your connection and try again.', 'error');
+  }, [showToast]);
+
+  // ── goal actions (optimistic cache update — errors surface via toast) ──
   function addGoal(goal: Omit<Goal, 'id' | 'createdAt' | 'updatedAt'>): Goal {
-    const now = new Date().toISOString();
-    const newGoal: Goal = { ...goal, id: `goal-${Date.now()}`, createdAt: now, updatedAt: now };
-    setGoals(prev => [...prev, newGoal]);
-    return newGoal;
+    const optimistic: Goal = {
+      ...goal,
+      id: `temp-${Date.now()}`,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    // Insert into cache immediately so the UI reflects the new goal without waiting
+    qc.setQueryData<Goal[]>(goalKeys.all, prev =>
+      prev ? [optimistic, ...prev] : [optimistic],
+    );
+    addGoalMutation.mutate(goal, {
+      onError: () => {
+        // Remove the stub if the server write failed
+        qc.setQueryData<Goal[]>(goalKeys.all, prev =>
+          prev?.filter(g => g.id !== optimistic.id),
+        );
+        onMutationError();
+      },
+    });
+    return optimistic;
   }
 
+  const VALID_GOAL_TRANSITIONS: Record<GoalStatus, GoalStatus[]> = {
+    not_started: ['in_progress'],
+    in_progress: ['submitted'],
+    submitted: ['approved', 'rejected'],
+    approved: [],
+    rejected: ['in_progress'],
+  };
+
   function updateGoal(goalId: string, updates: Partial<Goal>) {
-    setGoals(prev => prev.map(g => g.id === goalId ? { ...g, ...updates, updatedAt: new Date().toISOString() } : g));
+    if (updates.status !== undefined) {
+      const current = goals.find(g => g.id === goalId);
+      if (current) {
+        const allowed = VALID_GOAL_TRANSITIONS[current.status] ?? [];
+        if (!allowed.includes(updates.status as GoalStatus)) {
+          showToast(
+            `Cannot change goal status from "${current.status}" to "${updates.status}".`,
+            'error',
+          );
+          return;
+        }
+      }
+    }
+    updateGoalMutation.mutate({ goalId, updates }, { onError: onMutationError });
   }
 
   function deleteGoal(goalId: string) {
-    setGoals(prev => prev.filter(g => g.id !== goalId));
+    deleteGoalMutation.mutate(goalId, { onError: onMutationError });
   }
 
-  function submitEvidence(goalId: string, data: Omit<Evidence, 'id' | 'status'>) {
-    const evidence: Evidence = { ...data, id: `ev-${Date.now()}`, status: 'pending' };
-    updateGoal(goalId, { status: 'submitted', evidence });
+  function submitEvidence(goalId: string, data: Omit<Evidence, 'id' | 'status'>): Promise<void> {
+    return submitEvidenceMutation.mutateAsync({ goalId, data }).then(() => undefined);
   }
 
-  function reviewEvidence(goalId: string, approved: boolean, feedback: string, managerRating?: number) {
-    const goal = goals.find(g => g.id === goalId);
-    if (!goal?.evidence) return;
-    updateGoal(goalId, {
-      status: approved ? 'approved' : 'rejected',
-      managerRating: approved ? managerRating : undefined,
-      evidence: {
-        ...goal.evidence,
-        status: approved ? 'approved' : 'rejected',
-        managerFeedback: feedback,
-        reviewedAt: new Date().toISOString(),
-      },
-    });
+  function reviewEvidence(goalId: string, approved: boolean, feedback: string, managerRating?: number, onSuccess?: () => void) {
+    reviewEvidenceMutation.mutate({ goalId, approved, feedback, managerRating }, { onError: onMutationError, onSuccess });
   }
 
   function markNotifRead(notifId: string) {
-    setNotifications(prev => prev.map(n => n.id === notifId ? { ...n, read: true } : n));
+    markReadMutation.mutate(notifId);
   }
 
   function markAllRead(recipientId: string) {
-    setNotifications(prev => prev.map(n => n.recipientId === recipientId ? { ...n, read: true } : n));
+    markAllReadMutation.mutate(recipientId);
   }
 
   function addNotification(notif: Omit<Notification, 'id'>) {
-    setNotifications(prev => [{ ...notif, id: `notif-${Date.now()}` }, ...prev]);
+    addNotifMutation.mutate(notif);
+    const recipient = users.find(u => u.id === notif.recipientId);
+    if (recipient?.pushToken) {
+      sendExpoPush(recipient.pushToken, {
+        title: notif.title,
+        body: notif.message,
+        data: { type: notif.type, goalId: notif.relatedGoalId },
+      });
+    }
   }
 
   function closeFiscalYear() {
     const now = new Date().toISOString();
     const staff = employees.filter(e => e.role !== 'admin' && e.status === 'active');
-    staff.forEach(e => updateUser(e.id, { status: 'completed_fiscal_year' as EmployeeStatus }));
-    setNotifications(prev => [
-      ...staff.map(e => ({
-        id: `notif-fy-${Date.now()}-${e.id}`,
+    staff.forEach(e => {
+      updateUser(e.id, { status: 'completed_fiscal_year' as EmployeeStatus }).catch(onMutationError);
+      addNotification({
         recipientId: e.id,
         type: 'fiscal_year_complete' as NotificationType,
         title: 'FY 2026 Closed',
         message: 'Fiscal Year 2026 has been officially closed. Your performance record is now finalized.',
         read: false,
         createdAt: now,
-      })),
-      ...prev,
-    ]);
+      });
+    });
   }
 
   function saveDailyLog(employeeId: string, date: string, tasks: DailyTask[], notes?: string) {
-    const now = new Date().toISOString();
-    setDailyLogs(prev => {
-      const existing = prev.find(l => l.employeeId === employeeId && l.date === date);
-      if (existing) {
-        return prev.map(l => l.id === existing.id ? { ...l, tasks, notes, updatedAt: now } : l);
-      }
-      return [...prev, { id: `log-${Date.now()}`, employeeId, date, tasks, notes, createdAt: now, updatedAt: now }];
-    });
+    saveLogMutation.mutate({ employeeId, date, tasks, notes }, { onError: onMutationError });
   }
 
   return (

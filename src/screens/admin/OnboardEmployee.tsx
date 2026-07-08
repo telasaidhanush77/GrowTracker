@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react';
+﻿import { useMemo, useState } from 'react';
 import {
+  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -9,6 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import * as Crypto from 'expo-crypto';
 import { AnimatedButton } from '../../components/AnimatedButton';
 import Header from '../../components/Header';
 import { useApp } from '../../context/AppContext';
@@ -25,9 +27,9 @@ function splitName(full: string): { firstName: string; lastName: string } {
   return { firstName: parts[0], lastName: parts.slice(1).join(' ') };
 }
 
-function genTempPassword(): string {
-  // Generate a readable temporary password: Gt + 6 random digits
-  const n = Math.floor(100000 + Math.random() * 900000);
+async function genTempPassword(): Promise<string> {
+  const bytes = await Crypto.getRandomBytesAsync(4);
+  const n = (new DataView(bytes.buffer).getUint32(0) % 900000) + 100000;
   return `Gt@${n}`;
 }
 
@@ -35,7 +37,7 @@ export default function OnboardEmployee({ navigation }: ScreenProps) {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
-  const { employees, addNotification } = useApp();
+  const { employees } = useApp();
   const { createUser, updateUser } = useAuth();
   const { showToast } = useToast();
 
@@ -74,7 +76,7 @@ export default function OnboardEmployee({ navigation }: ScreenProps) {
     try {
       const { firstName, lastName } = splitName(name);
       const username = (firstName.toLowerCase() + '.' + lastName.toLowerCase()).replace(/\s+/g, '');
-      const tempPassword = genTempPassword();
+      const tempPassword = await genTempPassword();
 
       const newUser = await createUser({
         firstName,
@@ -93,32 +95,27 @@ export default function OnboardEmployee({ navigation }: ScreenProps) {
         status: 'onboarding',
       });
 
-      const manager = employees.find(e => e.id === managerId);
-      addNotification({
-        recipientId: managerId,
-        type: 'onboarding_complete',
-        title: 'New Employee Onboarded',
-        message: `${newUser.name} has been added to your team. Please set their goals within the first two weeks.`,
-        read: false,
-        createdAt: new Date().toISOString(),
-        relatedEmployeeId: newUser.id,
-      });
-      addNotification({
-        recipientId: newUser.id,
-        type: 'onboarding_complete',
-        title: 'Welcome to GrowTracker! 👋',
-        message: `You've been onboarded${manager ? ` and ${manager.name} has been assigned as your reporting manager` : ''}. Your manager will set your goals soon.`,
-        read: false,
-        createdAt: new Date().toISOString(),
-        relatedEmployeeId: newUser.id,
-      });
+      // Onboarding notifications are created by the handle_manager_assigned DB trigger
 
       setCredentials({ code: newUser.employeeCode, password: tempPassword, username: newUser.username });
       showToast(`${newUser.name} (${newUser.employeeCode}) has been onboarded successfully.`, 'success', 'Employee Onboarded');
-    } catch (err: any) {
-      showToast(err?.message ?? 'Onboarding failed. Please try again.', 'error', 'Error');
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : 'Onboarding failed. Please try again.', 'error', 'Error');
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function copyCredToClipboard(label: string, value: string) {
+    if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) {
+      try {
+        await navigator.clipboard.writeText(value);
+        showToast(`${label} copied`, 'success');
+      } catch {
+        showToast('Could not copy — please copy manually.', 'error');
+      }
+    } else {
+      Alert.alert('Copy Manually', `${label}:\n\n${value}`);
     }
   }
 
@@ -141,21 +138,36 @@ export default function OnboardEmployee({ navigation }: ScreenProps) {
               Share these credentials securely with the new hire. They can use them to sign in.
             </Text>
 
+            <View style={styles.credWarnBanner}>
+              <Text style={styles.credWarnText}>
+                ⚠ Save these credentials now — they will not be shown again after you leave this screen.
+              </Text>
+            </View>
+
             <View style={styles.credBox}>
-              <View style={styles.credRow}>
+              <TouchableOpacity style={styles.credRow} onPress={() => copyCredToClipboard('Unique ID', credentials.code)} activeOpacity={0.7}>
                 <Text style={styles.credLabel}>Unique ID</Text>
-                <Text style={styles.credValue}>{credentials.code}</Text>
-              </View>
+                <View style={styles.credValueRow}>
+                  <Text style={styles.credValue}>{credentials.code}</Text>
+                  <Text style={styles.credCopy}>⎘</Text>
+                </View>
+              </TouchableOpacity>
               <View style={styles.credDivider} />
-              <View style={styles.credRow}>
+              <TouchableOpacity style={styles.credRow} onPress={() => copyCredToClipboard('Username', credentials.username)} activeOpacity={0.7}>
                 <Text style={styles.credLabel}>Username</Text>
-                <Text style={styles.credValue}>{credentials.username}</Text>
-              </View>
+                <View style={styles.credValueRow}>
+                  <Text style={styles.credValue}>{credentials.username}</Text>
+                  <Text style={styles.credCopy}>⎘</Text>
+                </View>
+              </TouchableOpacity>
               <View style={styles.credDivider} />
-              <View style={styles.credRow}>
+              <TouchableOpacity style={styles.credRow} onPress={() => copyCredToClipboard('Temp Password', credentials.password)} activeOpacity={0.7}>
                 <Text style={styles.credLabel}>Temp Password</Text>
-                <Text style={[styles.credValue, { color: colors.adminPrimary }]}>{credentials.password}</Text>
-              </View>
+                <View style={styles.credValueRow}>
+                  <Text style={[styles.credValue, { color: colors.adminPrimary }]}>{credentials.password}</Text>
+                  <Text style={styles.credCopy}>⎘</Text>
+                </View>
+              </TouchableOpacity>
             </View>
 
             <Text style={styles.credHint}>
@@ -391,14 +403,21 @@ function createStyles(C: ColorPalette) {
     successTitle: { fontSize: 22, fontWeight: '900', color: C.textPrimary, marginBottom: 8 },
     successSub: { fontSize: 14, color: C.textMuted, textAlign: 'center', lineHeight: 20, marginBottom: 24 },
 
+    credWarnBanner: {
+      width: '100%', backgroundColor: C.pendingBg, borderRadius: Radius.md,
+      padding: Spacing.md, marginBottom: 14, borderWidth: 1, borderColor: C.pending + '50',
+    },
+    credWarnText: { fontSize: 12, color: C.textSecondary, lineHeight: 18, textAlign: 'center' },
     credBox: {
       width: '100%', backgroundColor: C.approvedBg, borderRadius: Radius.lg,
       padding: Spacing.lg, borderWidth: 1, borderColor: C.approved + '40', marginBottom: 14,
     },
     credRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 6 },
+    credValueRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
     credDivider: { height: 1, backgroundColor: C.approved + '25', marginVertical: 4 },
     credLabel: { fontSize: 12, fontWeight: '700', color: C.textMuted },
     credValue: { fontSize: 16, fontWeight: '900', color: C.textPrimary },
+    credCopy: { fontSize: 16, color: C.textMuted },
     credHint: { fontSize: 12, color: C.textMuted, textAlign: 'center', lineHeight: 18, marginBottom: 28 },
 
     doneBtn: {

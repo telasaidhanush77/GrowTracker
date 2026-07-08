@@ -1,4 +1,4 @@
-import { createContext, ReactNode, useCallback, useContext, useRef, useState } from 'react';
+import { createContext, ReactNode, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { Animated, StyleSheet, Text, View } from 'react-native';
 import { useTheme } from './ThemeContext';
 import type { ColorPalette } from '../theme';
@@ -34,6 +34,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const scaleAnim  = useRef(new Animated.Value(0.88)).current;
   const opacity    = useRef(new Animated.Value(0)).current;
   const timer      = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timer.current) clearTimeout(timer.current);
+    };
+  }, []);
 
   const showToast = useCallback((message: string, type: ToastType = 'success', title?: string) => {
     if (timer.current) clearTimeout(timer.current);

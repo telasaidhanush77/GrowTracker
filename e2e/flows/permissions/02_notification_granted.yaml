@@ -1,0 +1,40 @@
+# 02_notification_granted.yaml
+# Push notifications — permission GRANTED
+#
+# WHAT THIS TESTS:
+#   When notification permission is pre-granted:
+#   1. The app launches and logs in without crashing
+#   2. No permission-related error UI is shown anywhere in the normal flow
+#   3. The employee dashboard is accessible after login
+#
+# NOTE: Push token registration happens in the background after login.
+# We cannot observe the Expo push token in a black-box E2E test, but we can
+# verify the app does not crash and the UI is intact.
+#
+# CREDENTIALS: Set EMPLOYEE_USER and EMPLOYEE_PASS in e2e/.env
+
+appId: com.growtracker.app
+---
+
+- launchApp:
+    clearState: true
+    permissions:
+      notifications: allow
+
+- runFlow: "../../helpers/login_employee.yaml"
+
+# App should reach the dashboard — notifications granted silently in background
+- assertVisible: "My Workspace"
+- takeScreenshot: "01a_notif_granted_dashboard"
+
+# Navigate to Notifications screen — should load without errors
+- tapOn: "🔔"
+- waitForAnimationToEnd
+- assertVisible: "Notifications"
+- takeScreenshot: "01b_notif_granted_notifications_screen"
+- assertNotVisible: "permission-denied-banner"
+
+- tapOn: "‹"
+- waitForAnimationToEnd
+- assertVisible: "My Workspace"
+- takeScreenshot: "01c_notif_granted_back_to_dashboard"

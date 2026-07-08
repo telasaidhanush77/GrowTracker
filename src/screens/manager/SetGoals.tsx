@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+﻿import { useState, useMemo } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -13,7 +13,7 @@ import {
 import { AnimatedButton } from '../../components/AnimatedButton';
 import Header from '../../components/Header';
 import { useApp } from '../../context/AppContext';
-import { useToast } from '../../context/ToastContext';
+import { ToastType, useToast } from '../../context/ToastContext';
 import { useTheme } from '../../context/ThemeContext';
 import { Radius, Shadow, Spacing } from '../../theme';
 import type { ColorPalette } from '../../theme';
@@ -26,18 +26,21 @@ import {
   STATUS_CONFIG,
 } from '../../utils';
 
-async function pickAttachment(showToast: (msg: string, type?: any, title?: string) => void): Promise<Attachment | null> {
+async function pickAttachment(showToast: (msg: string, type?: ToastType, title?: string) => void): Promise<Attachment | null> {
   if (Platform.OS !== 'web') {
     showToast('File attachments are available in the web app.', 'info', 'Web Only');
     return null;
   }
   return new Promise(resolve => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const input = (document as any).createElement('input');
     input.type = 'file';
     input.accept = '.pdf,.jpg,.jpeg,.png,.xml,.doc,.docx,.xlsx,.csv,.txt';
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     input.onchange = (e: any) => {
       const f = e.target?.files?.[0];
       if (!f) { resolve(null); return; }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const reader = new (window as any).FileReader();
       reader.onload = () => {
         resolve({ name: f.name, uri: reader.result as string, mimeType: f.type || 'application/octet-stream', size: f.size });
@@ -47,6 +50,19 @@ async function pickAttachment(showToast: (msg: string, type?: any, title?: strin
     };
     input.click();
   });
+}
+
+function autoFormatDate(raw: string): string {
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length <= 4) return digits;
+  if (digits.length <= 6) return `${digits.slice(0, 4)}-${digits.slice(4)}`;
+  return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
+}
+
+function isValidISODate(str: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(str)) return false;
+  const d = new Date(str + 'T00:00:00');
+  return !isNaN(d.getTime());
 }
 
 const CATEGORIES: GoalCategory[] = [
@@ -64,8 +80,8 @@ export default function SetGoals({ navigation, params, currentUserId }: ScreenPr
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
-  const employee = employees.find(e => e.id === params.employeeId);
-  const empGoals = goals.filter(g => g.employeeId === params.employeeId);
+  const employeeId = params.employeeId ?? '';
+  const employee = employees.find(e => e.id === employeeId);
 
   const [activeQ, setActiveQ] = useState<Quarter>(params.filterQuarter ?? 'Q2');
   const [activeStatusFilter, setActiveStatusFilter] = useState<GoalStatus | null>(params.filterStatus ?? null);
@@ -76,16 +92,23 @@ export default function SetGoals({ navigation, params, currentUserId }: ScreenPr
   const [category, setCategory] = useState<GoalCategory>('technical');
   const [priority, setPriority] = useState<GoalPriority>('medium');
   const [targetDate, setTargetDate] = useState('');
-  const [weight, setWeight] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
 
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
   const [editMode, setEditMode] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
 
+  if (!employeeId) {
+    return null; // should never happen — set-goals always receives employeeId
+  }
+
+  const empGoals = goals.filter(g => g.employeeId === employeeId);
   const qGoals = empGoals.filter(g => g.quarter === activeQ);
-  const filteredGoals = activeStatusFilter ? qGoals.filter(g => g.status === activeStatusFilter) : qGoals;
-  const usedWeight = qGoals.reduce((s, g) => s + g.weight, 0);
-  const remainingWeight = 100 - usedWeight;
+  const q2GoalTitles = new Set(empGoals.filter(g => g.quarter === 'Q2').map(g => g.title));
+  const archivedStatuses: GoalStatus[] = ['approved', 'rejected'];
+  const visibleQGoals = showArchived ? qGoals : qGoals.filter(g => !archivedStatuses.includes(g.status));
+  const filteredGoals = activeStatusFilter ? visibleQGoals.filter(g => g.status === activeStatusFilter) : visibleQGoals;
+  const archivedCount = qGoals.filter(g => archivedStatuses.includes(g.status)).length;
 
   function resetForm() {
     setTitle('');
@@ -93,7 +116,6 @@ export default function SetGoals({ navigation, params, currentUserId }: ScreenPr
     setCategory('technical');
     setPriority('medium');
     setTargetDate('');
-    setWeight('');
     setAttachments([]);
     setShowForm(false);
     setEditingGoalId(null);
@@ -109,8 +131,7 @@ export default function SetGoals({ navigation, params, currentUserId }: ScreenPr
     setCategory(goal.category);
     setPriority(goal.priority);
     setTargetDate(goal.targetDate);
-    setWeight(String(goal.weight));
-    setAttachments([]);
+    setAttachments(goal.attachments ?? []);
     setShowForm(false);
     setEditMode(true);
   }
@@ -121,15 +142,8 @@ export default function SetGoals({ navigation, params, currentUserId }: ScreenPr
       showToast('Please fill in title, description, and target date.', 'error', 'Missing Fields');
       return;
     }
-    const parsedWeight = parseInt(weight, 10);
-    if (!parsedWeight || parsedWeight < 1 || parsedWeight > 100) {
-      showToast('Credits must be between 1 and 100.', 'error', 'Invalid Credits');
-      return;
-    }
-    const editingGoal = qGoals.find(g => g.id === editingGoalId);
-    const weightDelta = parsedWeight - (editingGoal?.weight ?? 0);
-    if (weightDelta > remainingWeight) {
-      showToast(`Only ${remainingWeight} cr available for ${activeQ}.`, 'warning', 'Budget Exceeded');
+    if (!isValidISODate(targetDate.trim())) {
+      showToast('Target date must be in YYYY-MM-DD format (e.g. 2026-06-30).', 'error', 'Invalid Date');
       return;
     }
     updateGoal(editingGoalId, {
@@ -138,11 +152,10 @@ export default function SetGoals({ navigation, params, currentUserId }: ScreenPr
       category,
       priority,
       targetDate: targetDate.trim(),
-      weight: parsedWeight,
     });
     if (employee) {
       addNotification({
-        recipientId: params.employeeId!,
+        recipientId: employeeId,
         type: 'goal_adjusted',
         title: 'Goal Updated',
         message: `${currentUserId ? employees.find(e => e.id === currentUserId)?.name ?? 'Your manager' : 'Your manager'} updated your ${activeQ} goal: "${title.trim()}"`,
@@ -169,50 +182,37 @@ export default function SetGoals({ navigation, params, currentUserId }: ScreenPr
       showToast('Please fill in title, description, and target date.', 'error', 'Missing Fields');
       return;
     }
-    const w = parseInt(weight, 10);
-    if (!w || w < 1 || w > 100) {
-      showToast('Credits must be between 1 and 100.', 'error', 'Invalid Credits');
+    if (!isValidISODate(targetDate.trim())) {
+      showToast('Target date must be in YYYY-MM-DD format (e.g. 2026-06-30).', 'error', 'Invalid Date');
       return;
     }
-    if (w > remainingWeight) {
-      showToast(`Only ${remainingWeight} cr remaining for ${activeQ}.`, 'warning', 'Budget Exceeded');
-      return;
-    }
-
     const newGoal = addGoal({
-      employeeId: params.employeeId!,
+      employeeId: employeeId,
       title: title.trim(),
       description: description.trim(),
       quarter: activeQ,
       category,
       priority,
       targetDate: targetDate.trim(),
-      weight: w,
+      weight: 1,
       status: 'not_started',
       attachments: attachments.length > 0 ? attachments : undefined,
     });
 
     if (employee) {
-      addNotification({
-        recipientId: params.employeeId!,
-        type: 'goal_assigned',
-        title: 'New Goal Assigned',
-        message: `${currentUserId ? employees.find(e => e.id === currentUserId)?.name : 'Your manager'} assigned you a new ${activeQ} goal: "${newGoal.title}"`,
-        read: false,
-        createdAt: new Date().toISOString(),
-        relatedGoalId: newGoal.id,
-      });
+      // goal_assigned notification is created by the handle_goal_inserted DB trigger
 
       // Transition from onboarding → active when the first goal is set
       if (employee.status === 'onboarding') {
-        updateEmployee(params.employeeId!, { status: 'active' });
+        updateEmployee(employeeId, { status: 'active' });
         addNotification({
-          recipientId: params.employeeId!,
+          recipientId: employeeId,
           type: 'goal_assigned',
           title: 'Onboarding Complete',
           message: 'Your goals have been set and you are now an active team member. Welcome!',
           read: false,
           createdAt: new Date().toISOString(),
+          relatedEmployeeId: employeeId,
         });
       }
     }
@@ -221,10 +221,11 @@ export default function SetGoals({ navigation, params, currentUserId }: ScreenPr
   }
 
   function handleDelete(goalId: string, isTerminal: boolean) {
-    const message = isTerminal
-      ? 'This goal has already been acted on. Deleting it cannot be undone and will affect performance records.'
-      : 'Are you sure you want to delete this goal?';
-    Alert.alert('Delete Goal', message, [
+    if (isTerminal) {
+      showToast('Goals that have been submitted or reviewed cannot be deleted.', 'error', 'Cannot Delete');
+      return;
+    }
+    Alert.alert('Delete Goal', 'Are you sure you want to delete this goal?', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: () => deleteGoal(goalId) },
     ]);
@@ -244,7 +245,7 @@ export default function SetGoals({ navigation, params, currentUserId }: ScreenPr
   return (
     <KeyboardAvoidingView
       style={styles.root}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior="padding"
     >
       <Header
         title={`Goals · ${employee.name}`}
@@ -271,21 +272,62 @@ export default function SetGoals({ navigation, params, currentUserId }: ScreenPr
           ))}
         </View>
 
-        <View style={styles.weightBudget}>
-          <View style={styles.budgetBarTrack}>
-            <View
-              style={[
-                styles.budgetBarFill,
-                { width: `${Math.min(usedWeight, 100)}%` as any },
-                usedWeight > 100 ? styles.budgetOver : null,
-              ]}
-            />
-          </View>
-          <Text style={styles.budgetText}>
-            Credits used: <Text style={{ fontWeight: '700' }}>{usedWeight}/100</Text>
-            {remainingWeight > 0 ? ` · ${remainingWeight} cr left` : ' · Budget full'}
-          </Text>
-        </View>
+        {archivedCount > 0 && (
+          <TouchableOpacity
+            style={styles.archiveToggle}
+            onPress={() => setShowArchived(v => !v)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.archiveToggleText}>
+              {showArchived ? `▲ Hide completed goals (${archivedCount})` : `▼ Show completed goals (${archivedCount})`}
+            </Text>
+          </TouchableOpacity>
+        )}
+
+        {activeQ === 'Q1' && (() => {
+          const unfinished = qGoals.filter(g =>
+            (g.status === 'not_started' || g.status === 'in_progress' || g.status === 'rejected') &&
+            !q2GoalTitles.has(g.title),
+          );
+          if (unfinished.length === 0) return null;
+          return (
+            <TouchableOpacity
+              style={styles.bulkCarryBtn}
+              onPress={() => {
+                Alert.alert(
+                  'Carry All to Q2',
+                  `Copy ${unfinished.length} unfinished Q1 goal${unfinished.length !== 1 ? 's' : ''} into Q2 as new goals?`,
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Carry Over',
+                      onPress: () => {
+                        unfinished.forEach(g => {
+                          addGoal({
+                            employeeId,
+                            title: g.title,
+                            description: g.description,
+                            quarter: 'Q2',
+                            category: g.category,
+                            priority: g.priority,
+                            targetDate: g.targetDate,
+                            weight: 1,
+                            status: 'not_started',
+                            attachments: g.attachments,
+                          });
+                        });
+                        showToast(`${unfinished.length} goal${unfinished.length !== 1 ? 's' : ''} carried to Q2.`, 'success', 'Carried to Q2');
+                      },
+                    },
+                  ],
+                );
+              }}
+              activeOpacity={0.75}
+            >
+              <Text style={styles.bulkCarryBtnText}>↩ Carry all unfinished to Q2 ({unfinished.length})</Text>
+            </TouchableOpacity>
+          );
+        })()}
 
         {activeStatusFilter && (
           <View style={styles.filterBanner}>
@@ -356,7 +398,29 @@ export default function SetGoals({ navigation, params, currentUserId }: ScreenPr
                 <Text style={[styles.goalDate, overdue && styles.overdueText]}>
                   {overdue ? '⚠ Overdue · ' : ''}Due {formatDate(goal.targetDate)}
                 </Text>
-                <Text style={styles.goalWeight}>{goal.weight} cr</Text>
+                {activeQ === 'Q1' && (goal.status === 'rejected' || goal.status === 'in_progress') && (
+                  <TouchableOpacity
+                    style={styles.carryBtn}
+                    onPress={() => {
+                      addGoal({
+                        employeeId,
+                        title: goal.title,
+                        description: goal.description,
+                        quarter: 'Q2',
+                        category: goal.category,
+                        priority: goal.priority,
+                        targetDate: goal.targetDate,
+                        weight: 1,
+                        status: 'not_started',
+                        attachments: goal.attachments,
+                      });
+                      showToast(`"${goal.title}" carried to Q2.`, 'success', 'Carried to Q2');
+                    }}
+                    hitSlop={6}
+                  >
+                    <Text style={styles.carryBtnText}>↩ Carry to Q2</Text>
+                  </TouchableOpacity>
+                )}
               </View>
 
               {goal.evidence?.managerFeedback && (
@@ -456,31 +520,17 @@ export default function SetGoals({ navigation, params, currentUserId }: ScreenPr
                 })}
               </View>
 
-              <View style={styles.row2}>
-                <View style={{ flex: 1 }}>
-                  <Label text="Target Date *" colors={colors} />
-                  <TextInput
-                    style={[styles.input, !isEditable && styles.inputReadOnly]}
-                    value={targetDate}
-                    onChangeText={isEditable ? setTargetDate : undefined}
-                    placeholder="YYYY-MM-DD"
-                    placeholderTextColor={colors.textMuted}
-                    editable={isEditable}
-                  />
-                </View>
-                <View style={{ width: 90 }}>
-                  <Label text={`Credits *`} colors={colors} />
-                  <TextInput
-                    style={[styles.input, !isEditable && styles.inputReadOnly]}
-                    value={weight}
-                    onChangeText={isEditable ? setWeight : undefined}
-                    placeholder="e.g. 30"
-                    placeholderTextColor={colors.textMuted}
-                    keyboardType="number-pad"
-                    editable={isEditable}
-                  />
-                </View>
-              </View>
+              <Label text="Target Date *" colors={colors} />
+              <TextInput
+                style={[styles.input, !isEditable && styles.inputReadOnly]}
+                value={targetDate}
+                onChangeText={isEditable ? (text => setTargetDate(autoFormatDate(text))) : undefined}
+                placeholder="YYYY-MM-DD"
+                placeholderTextColor={colors.textMuted}
+                keyboardType="numeric"
+                maxLength={10}
+                editable={isEditable}
+              />
 
               <View style={styles.formActions}>
                 <TouchableOpacity style={styles.cancelBtn} onPress={resetForm} activeOpacity={0.7}>
@@ -498,16 +548,11 @@ export default function SetGoals({ navigation, params, currentUserId }: ScreenPr
 
         {!showForm && !editMode ? (
           <TouchableOpacity
-            style={[
-              styles.addBtn,
-              remainingWeight <= 0 && styles.addBtnDisabled,
-            ]}
-            onPress={() => remainingWeight > 0 && setShowForm(true)}
-            disabled={remainingWeight <= 0}
+            style={styles.addBtn}
+            onPress={() => setShowForm(true)}
+            activeOpacity={0.7}
           >
-            <Text style={styles.addBtnText}>
-              {remainingWeight > 0 ? '+ Add Goal' : 'Credits budget reached'}
-            </Text>
+            <Text style={styles.addBtnText}>+ Add Goal</Text>
           </TouchableOpacity>
         ) : showForm ? (
           <View style={styles.form}>
@@ -599,29 +644,16 @@ export default function SetGoals({ navigation, params, currentUserId }: ScreenPr
               })}
             </View>
 
-            <View style={styles.row2}>
-              <View style={{ flex: 1 }}>
-                <Label text="Target Date *" colors={colors} />
-                <TextInput
-                  style={styles.input}
-                  value={targetDate}
-                  onChangeText={setTargetDate}
-                  placeholder="YYYY-MM-DD"
-                  placeholderTextColor={colors.textMuted}
-                />
-              </View>
-              <View style={{ width: 90 }}>
-                <Label text={`Credits * (${remainingWeight} cr left)`} colors={colors} />
-                <TextInput
-                  style={styles.input}
-                  value={weight}
-                  onChangeText={setWeight}
-                  placeholder="e.g. 30"
-                  placeholderTextColor={colors.textMuted}
-                  keyboardType="number-pad"
-                />
-              </View>
-            </View>
+            <Label text="Target Date *" colors={colors} />
+            <TextInput
+              style={styles.input}
+              value={targetDate}
+              onChangeText={text => setTargetDate(autoFormatDate(text))}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor={colors.textMuted}
+              keyboardType="numeric"
+              maxLength={10}
+            />
 
             <View style={styles.formActions}>
               <TouchableOpacity style={styles.cancelBtn} onPress={resetForm} activeOpacity={0.7}>
@@ -664,17 +696,29 @@ function createStyles(C: ColorPalette) {
     tabText: { fontSize: 14, fontWeight: '600', color: C.textMuted },
     tabTextActive: { color: C.bg },
 
-    weightBudget: { marginBottom: 16 },
-    budgetBarTrack: {
-      height: 6,
-      backgroundColor: C.border,
+    archiveToggle: {
+      alignSelf: 'flex-start',
+      marginBottom: 10,
+      paddingVertical: 4,
+      paddingHorizontal: 10,
+      backgroundColor: C.bgElevated,
       borderRadius: Radius.full,
-      overflow: 'hidden',
-      marginBottom: 4,
+      borderWidth: 1,
+      borderColor: C.border,
     },
-    budgetBarFill: { height: '100%', backgroundColor: C.primary, borderRadius: Radius.full },
-    budgetOver: { backgroundColor: C.rejected },
-    budgetText: { fontSize: 11, color: C.textMuted },
+    archiveToggleText: { fontSize: 12, color: C.textSecondary, fontWeight: '600' },
+
+    bulkCarryBtn: {
+      backgroundColor: C.pending + '18',
+      borderRadius: Radius.lg,
+      paddingVertical: 10,
+      paddingHorizontal: 14,
+      alignItems: 'center',
+      marginBottom: 12,
+      borderWidth: 1,
+      borderColor: C.pending + '60',
+    },
+    bulkCarryBtnText: { fontSize: 13, fontWeight: '700', color: C.pending },
 
     filterBanner: {
       flexDirection: 'row',
@@ -726,10 +770,18 @@ function createStyles(C: ColorPalette) {
     goalMeta: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 },
     chip: { borderRadius: Radius.full, paddingHorizontal: 8, paddingVertical: 3 },
     chipText: { fontSize: 11, fontWeight: '600' },
-    goalFooter: { flexDirection: 'row', justifyContent: 'space-between' },
+    goalFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
     goalDate: { fontSize: 11, color: C.textMuted },
+    carryBtn: {
+      backgroundColor: C.pending + '25',
+      borderRadius: Radius.full,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderWidth: 1,
+      borderColor: C.pending,
+    },
+    carryBtnText: { fontSize: 11, fontWeight: '700', color: C.pending },
     overdueText: { color: C.rejected, fontWeight: '600' },
-    goalWeight: { fontSize: 11, color: C.textMuted },
     feedbackBox: { backgroundColor: C.pendingBg, borderRadius: Radius.sm, padding: 8, marginTop: 8 },
     feedbackLabel: { fontSize: 11, fontWeight: '700', color: C.pending, marginBottom: 2 },
     feedbackText: { fontSize: 12, color: C.textSecondary },
@@ -743,7 +795,6 @@ function createStyles(C: ColorPalette) {
       alignItems: 'center',
       marginBottom: 12,
     },
-    addBtnDisabled: { borderColor: C.border },
     addBtnText: { fontSize: 15, fontWeight: '700', color: C.primary },
 
     form: {

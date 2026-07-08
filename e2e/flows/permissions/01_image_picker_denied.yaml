@@ -1,0 +1,76 @@
+# 01_image_picker_denied.yaml
+# Image picker — camera and photo library DENIED
+#
+# WHAT THIS TESTS:
+#   When camera and photo library permissions are pre-denied before app launch:
+#   1. The Submit Evidence screen shows the PermissionDeniedBanner
+#   2. The banner contains the correct denied message
+#   3. An "Open Settings" button is visible (leads to OS Settings — not tapped in E2E)
+#   4. The app does not crash
+#   5. The user can still fill in the description and submit without an attachment
+#
+# CREDENTIALS: Set EMPLOYEE_USER and EMPLOYEE_PASS in e2e/.env
+# REQUIRES: Employee must have at least one goal to navigate to Submit Evidence
+
+appId: com.growtracker.app
+---
+
+- launchApp:
+    clearState: true
+    permissions:
+      camera: deny
+      photos: deny
+
+- runFlow: "../../helpers/login_employee.yaml"
+- assertVisible: "My Workspace"
+
+# Navigate to Submit Evidence via the Actions tab → first goal
+- tapOn: "Actions"
+- waitForAnimationToEnd
+- takeScreenshot: "02a_denied_actions_tab"
+
+- tapOn:
+    text: "Submit Evidence"
+    index: 0
+- waitForAnimationToEnd
+- takeScreenshot: "02b_denied_submit_evidence_screen"
+
+# Tap "Take Photo" to trigger the permission request (which will be denied)
+- tapOn:
+    id: "take-photo-btn"
+- waitForAnimationToEnd
+- takeScreenshot: "02c_denied_after_camera_tap"
+
+# Banner must now be visible (camera denied)
+- assertVisible:
+    id: "permission-denied-banner"
+- assertVisible: "Open Settings"
+- takeScreenshot: "02d_denied_banner_visible"
+
+# Tap "Choose from Library" to trigger library permission (also denied)
+- tapOn:
+    id: "attach-file-btn"
+- waitForAnimationToEnd
+- takeScreenshot: "02e_denied_after_library_tap"
+
+# Banner still visible, message may have expanded to mention both
+- assertVisible:
+    id: "permission-denied-banner"
+
+# Verify the user can still interact with the form and submit without attachments
+- tapOn: "What did you accomplish?"
+- inputText: "E2E test description — no attachment needed"
+- takeScreenshot: "02f_denied_description_filled"
+
+- tapOn: "Submit for Review"
+- waitForAnimationToEnd
+- takeScreenshot: "02g_denied_after_submit"
+# Either success toast or validation error — either way no crash
+- assertNotVisible:
+    id: "permission-denied-banner"
+# We should be back on the dashboard after submit
+- extendedWaitUntil:
+    visible:
+      text: "My Workspace"
+    timeout: 5000
+- takeScreenshot: "02h_denied_back_to_dashboard"

@@ -1,4 +1,4 @@
-import { TouchableOpacity, View } from 'react-native';
+import { DimensionValue, TouchableOpacity, View } from 'react-native';
 import { useTheme } from '../../context/ThemeContext';
 import { GoalStatus } from '../../types';
 
@@ -62,14 +62,14 @@ export default function GoalStatusBar({ stats, height = 6, onSegmentPress }: Goa
         onSegmentPress ? (
           <TouchableOpacity
             key={i}
-            style={{ width: `${s.pct}%` as any, height: '100%', backgroundColor: s.color }}
+            style={{ width: `${s.pct}%` as DimensionValue, height: '100%', backgroundColor: s.color }}
             onPress={() => onSegmentPress(s.status)}
             activeOpacity={0.7}
           />
         ) : (
           <View
             key={i}
-            style={{ width: `${s.pct}%` as any, height: '100%', backgroundColor: s.color }}
+            style={{ width: `${s.pct}%` as DimensionValue, height: '100%', backgroundColor: s.color }}
           />
         ),
       )}

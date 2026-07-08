@@ -1,0 +1,21 @@
+# Re-usable subflow: log in as the pre-seeded test manager.
+# Precondition: app is showing the Splash screen.
+# Postcondition: app is on the Manager Dashboard (Dashboard tab visible).
+appId: com.growtracker.app
+---
+# Wait for Metro bundle to finish loading before tapping
+- extendedWaitUntil:
+    visible:
+      text: "Manager"
+    timeout: 30000
+- tapOn: "Manager"
+- assertVisible: "Manager Portal"
+- tapOn:
+    text: "e.g. john.doe or EMP-0001"
+- inputText: "${MANAGER_USER}"
+- tapOn:
+    text: "Enter your password"
+- inputText: "${MANAGER_PASS}"
+- hideKeyboard
+- tapOn: "Sign In"
+- assertVisible: "Dashboard"

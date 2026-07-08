@@ -1,5 +1,5 @@
 export type Role = 'admin' | 'manager' | 'employee';
-export type EmployeeStatus = 'onboarding' | 'active' | 'completed_fiscal_year';
+export type EmployeeStatus = 'onboarding' | 'active' | 'completed_fiscal_year' | 'inactive';
 export type Quarter = 'Q1' | 'Q2';
 export type GoalStatus = 'not_started' | 'in_progress' | 'submitted' | 'approved' | 'rejected';
 export type GoalPriority = 'high' | 'medium' | 'low';
@@ -11,6 +11,7 @@ export interface Attachment {
   uri: string;
   mimeType: string;
   size?: number;
+  storagePath?: string;
 }
 
 export interface Evidence {
@@ -65,6 +66,7 @@ export interface StoredUser extends Omit<Employee, 'employeeCode'> {
   username: string;
   passwordHash: string; // "salt:sha256hash"
   mobile?: string;
+  pushToken?: string;
   createdAt: string;
 }
 
@@ -93,7 +95,13 @@ export type NotificationType =
   | 'evidence_rejected'
   | 'goal_adjusted'
   | 'fiscal_year_complete'
-  | 'onboarding_complete';
+  | 'onboarding_complete'
+  | 'employee_offboarded'
+  | 'manager_changed'
+  | 'ai_overdue_alert'
+  | 'ai_deadline_warning'
+  | 'ai_daily_log_reminder'
+  | 'ai_streak_milestone';
 
 export interface Notification {
   id: string;
@@ -142,7 +150,10 @@ export type Screen =
   | 'notifications'
   | 'profile'
   | 'fy-report'
-  | 'my-progress';
+  | 'my-progress'
+  | 'ai-reports'
+  | 'ai-report-detail'
+  | 'privacy-security';
 
 export interface NavParams {
   employeeId?: string;
@@ -155,6 +166,7 @@ export interface NavParams {
   readOnly?: boolean;
   role?: Role;
   authEmail?: string;
+  reportId?: string;
 }
 
 export interface StackEntry {

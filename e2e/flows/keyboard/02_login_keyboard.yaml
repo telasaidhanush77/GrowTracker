@@ -1,0 +1,86 @@
+# 02_login_keyboard.yaml — Login form keyboard behavior
+#
+# WHAT THIS TESTS:
+#   1. Neither field is covered by the keyboard — screenshots at each.
+#   2. Enter on the identifier field should move focus to Password —
+#      DOCUMENTED GAP: no returnKeyType="next" set on either field.
+#   3. Enter on the password field should submit the form —
+#      DOCUMENTED GAP: no returnKeyType="done" / onSubmitEditing set.
+#   4. Tapping outside an input dismisses the keyboard.
+#
+# SCREENSHOTS: Saved to the Maestro output directory.
+#
+# This form has only 2 fields and sits entirely above the fold, so keyboard
+# overlap is unlikely but screenshots confirm it.
+
+appId: com.growtracker.app
+---
+
+# ── Navigate to Employee Login form ──────────────────────────────────────────
+
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible:
+      text: "Employee"
+    timeout: 30000
+- tapOn: "Employee"
+- assertVisible: "Employee Portal"
+- assertVisible: "Welcome back"
+
+# ── FIELD 1: Identifier (username / email / ID) ───────────────────────────────
+
+- tapOn:
+    text: "e.g. john.doe or EMP-0001"
+- waitForAnimationToEnd
+- takeScreenshot: "01_login_identifier_focused"
+# Expected: the identifier field is visible above the keyboard.
+# The "Welcome back" heading and "Username / Email / ID" label should be visible.
+
+- inputText: "testuser"
+- takeScreenshot: "02_login_identifier_typed"
+
+# ── NEXT KEY TEST ─────────────────────────────────────────────────────────────
+# GAP: returnKeyType="next" is not set on the identifier field.
+# Pressing Enter should move focus to the password field. It doesn't.
+- pressKey: Enter
+- waitForAnimationToEnd
+- takeScreenshot: "03_login_enter_after_identifier"
+# Expected (ideal): password field focused, keyboard still visible.
+# Actual:           identifier field loses focus or keyboard dismisses.
+
+# ── FIELD 2: Password ─────────────────────────────────────────────────────────
+
+- tapOn:
+    text: "Enter your password"
+- waitForAnimationToEnd
+- takeScreenshot: "04_login_password_focused"
+# Expected: password field visible above keyboard.
+# The "Forgot password? →" link should be visible below the field (it may be
+# tucked just above the keyboard on small screens — check carefully).
+
+- inputText: "TestPass123!"
+- takeScreenshot: "05_login_password_typed"
+
+# ── DONE KEY TEST ─────────────────────────────────────────────────────────────
+# GAP: returnKeyType="done" / onSubmitEditing is not set on the password field.
+# Pressing Enter on the last field should call handleLogin(). It doesn't.
+- pressKey: Enter
+- waitForAnimationToEnd
+- takeScreenshot: "06_login_done_key_result"
+# Expected (ideal): login attempt fires (shows loading spinner or error banner).
+# Actual:           nothing happens.
+
+# ── TAP OUTSIDE TO DISMISS KEYBOARD ──────────────────────────────────────────
+# Tap on "Sign in with your username, email, or unique ID" — it is plain Text
+# with no parent touchable. Should dismiss the keyboard.
+- tapOn:
+    text: "Sign in with your username"
+- waitForAnimationToEnd
+- takeScreenshot: "07_login_keyboard_dismissed"
+# Expected: keyboard gone, Sign In button and sign-up row fully visible.
+
+# ── VERIFY NO CRASH ───────────────────────────────────────────────────────────
+
+- assertVisible: "Sign In"
+- takeScreenshot: "08_login_final_state"

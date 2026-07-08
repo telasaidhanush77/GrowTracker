@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { DimensionValue, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { AnimatedButton } from '../../components/AnimatedButton';
 import GoalStatusBar from '../../components/charts/GoalStatusBar';
 import Header from '../../components/Header';
@@ -32,22 +32,45 @@ export default function EmployeeDashboard({
   const { employees, goals, notifications } = useApp();
   const [activeTab, setActiveTab] = useState<Tab>('Overview');
 
-  const employee = employees.find(e => e.id === currentUserId);
-  const manager = employees.find(e => e.id === employee?.managerId);
-  const myGoals = goals.filter(g => g.employeeId === currentUserId);
+  const employee = useMemo(
+    () => employees.find(e => e.id === currentUserId),
+    [employees, currentUserId],
+  );
+  const manager = useMemo(
+    () => employees.find(e => e.id === employee?.managerId),
+    [employees, employee?.managerId],
+  );
 
-  const notifCount = notifications.filter(n => n.recipientId === currentUserId && !n.read).length;
+  const notifCount = useMemo(
+    () => notifications.filter(n => n.recipientId === currentUserId && !n.read).length,
+    [notifications, currentUserId],
+  );
 
-  const q1Stats = getGoalStats(myGoals, 'Q1');
-  const q2Stats = getGoalStats(myGoals, 'Q2');
-  const q1Score = calcQuarterScore(myGoals, 'Q1');
-  const q2Score = calcQuarterScore(myGoals, 'Q2');
-
-  const rejectedQ1 = myGoals.filter(g => g.quarter === 'Q1' && g.status === 'rejected');
-  const actionableGoals = myGoals
-    .filter(g => g.status === 'in_progress' || g.status === 'not_started')
-    .sort((a, b) => new Date(a.targetDate).getTime() - new Date(b.targetDate).getTime());
-  const overdueGoals = actionableGoals.filter(g => isOverdue(g.targetDate));
+  // Goal-derived stats/scores/sorts. Memoized so tab switches (activeTab) and
+  // other re-renders don't recompute them.
+  const {
+    myGoals, q1Stats, q2Stats, q1Score, q2Score,
+    rejectedQ1, overdueGoals, dueSoonGoals,
+  } = useMemo(() => {
+    const myGoals = goals.filter(g => g.employeeId === currentUserId);
+    const actionableGoals = myGoals
+      .filter(g => g.status === 'in_progress' || g.status === 'not_started')
+      .sort((a, b) => new Date(a.targetDate).getTime() - new Date(b.targetDate).getTime());
+    return {
+      myGoals,
+      q1Stats: getGoalStats(myGoals, 'Q1'),
+      q2Stats: getGoalStats(myGoals, 'Q2'),
+      q1Score: calcQuarterScore(myGoals, 'Q1'),
+      q2Score: calcQuarterScore(myGoals, 'Q2'),
+      rejectedQ1: myGoals.filter(g => g.quarter === 'Q1' && g.status === 'rejected'),
+      overdueGoals: actionableGoals.filter(g => isOverdue(g.targetDate)),
+      dueSoonGoals: actionableGoals.filter(g => {
+        if (isOverdue(g.targetDate)) return false;
+        const daysUntil = Math.ceil((new Date(g.targetDate + 'T00:00:00').getTime() - Date.now()) / 86400000);
+        return daysUntil <= 7;
+      }),
+    };
+  }, [goals, currentUserId]);
 
   const userInitials = employee?.avatarInitials ?? '';
 
@@ -62,6 +85,7 @@ export default function EmployeeDashboard({
         onSwitchAccount={onSwitchAccount}
         onNotif={() => navigation.navigate('notifications')}
         onProfile={() => navigation.navigate('profile')}
+        onPrivacySecurity={() => navigation.navigate('privacy-security')}
         notifCount={notifCount}
         userInitials={userInitials}
       />
@@ -77,6 +101,8 @@ export default function EmployeeDashboard({
                 style={styles.alertCard}
                 onPress={() => navigation.navigate('goals-list')}
                 activeOpacity={0.8}
+                accessibilityLabel={`${overdueGoals.length} goal${overdueGoals.length !== 1 ? 's' : ''} overdue — tap to view`}
+                accessibilityRole="button"
               >
                 <View style={styles.alertIconWrap}>
                   <Text style={styles.alertIconText}>!</Text>
@@ -88,6 +114,26 @@ export default function EmployeeDashboard({
                   <Text style={styles.alertSub}>Submit evidence to avoid escalation</Text>
                 </View>
                 <Text style={styles.alertArrow}>›</Text>
+              </TouchableOpacity>
+            )}
+
+            {/* Due-soon warning */}
+            {overdueGoals.length === 0 && dueSoonGoals.length > 0 && (
+              <TouchableOpacity
+                style={styles.dueSoonCard}
+                onPress={() => navigation.navigate('goals-list')}
+                activeOpacity={0.8}
+              >
+                <View style={styles.dueSoonIconWrap}>
+                  <Text style={styles.dueSoonIconText}>⏰</Text>
+                </View>
+                <View style={styles.alertBody}>
+                  <Text style={styles.dueSoonTitle}>
+                    {dueSoonGoals.length} goal{dueSoonGoals.length !== 1 ? 's' : ''} due within 7 days
+                  </Text>
+                  <Text style={styles.alertSub}>Submit evidence before the deadline</Text>
+                </View>
+                <Text style={styles.dueSoonArrow}>›</Text>
               </TouchableOpacity>
             )}
 
@@ -108,6 +154,8 @@ export default function EmployeeDashboard({
                       style={styles.nudgeGoalBtn}
                       onPress={() => navigation.navigate('submit-evidence', { goalId: g.id })}
                       activeScale={0.97}
+                      accessibilityLabel={`Resubmit evidence for ${g.title}`}
+                      accessibilityRole="button"
                     >
                       <View style={styles.nudgeGoalRow}>
                         <View style={styles.nudgeGoalDot} />
@@ -133,6 +181,9 @@ export default function EmployeeDashboard({
                     onPress={() => navigation.navigate('fy-report', { employeeId: currentUserId! })}
                     style={styles.fyReportBtn}
                     activeOpacity={0.8}
+                    accessibilityLabel="View full FY report"
+                    accessibilityRole="button"
+                    hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
                   >
                     <Text style={styles.fyReportBtnText}>View Full Report →</Text>
                   </TouchableOpacity>
@@ -140,43 +191,59 @@ export default function EmployeeDashboard({
               </View>
             )}
 
-            {/* Quarter performance rings */}
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Performance Score</Text>
-            </View>
+            {/* Quarter performance rings / empty state */}
+            {myGoals.length === 0 ? (
+              <View style={styles.emptyGoalsCard}>
+                <Text style={styles.emptyGoalsIcon}>◎</Text>
+                <Text style={styles.emptyGoalsTitle}>No goals yet</Text>
+                <Text style={styles.emptyGoalsSub}>
+                  Your manager hasn't assigned any goals yet. Check back soon — they'll appear here once set.
+                </Text>
+              </View>
+            ) : (
+              <>
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionTitle}>Performance Score</Text>
+                </View>
 
-            <View style={styles.ringsRow}>
-              <TouchableOpacity
-                activeOpacity={0.85}
-                style={{ flex: 1 }}
-                onPress={() => navigation.navigate('goals-list', { filterQuarter: 'Q1' })}
-              >
-                <QuarterScoreCard
-                  quarter="Q1"
-                  period="Jan – Jun 2026"
-                  score={q1Score}
-                  stats={q1Stats}
-                  colors={colors}
-                  isComplete={q1Stats.total > 0 && q1Stats.inProgress === 0 && q1Stats.notStarted === 0}
-                  onStatusPress={(status) => navigation.navigate('goals-list', { filterStatus: status, filterQuarter: 'Q1' })}
-                />
-              </TouchableOpacity>
-              <TouchableOpacity
-                activeOpacity={0.85}
-                style={{ flex: 1 }}
-                onPress={() => navigation.navigate('goals-list', { filterQuarter: 'Q2' })}
-              >
-                <QuarterScoreCard
-                  quarter="Q2"
-                  period="Jul – Dec 2026"
-                  score={q2Score}
-                  stats={q2Stats}
-                  colors={colors}
-                  isActive
-                  onStatusPress={(status) => navigation.navigate('goals-list', { filterStatus: status, filterQuarter: 'Q2' })}
-                />
-              </TouchableOpacity>
-            </View>
+                <View style={styles.ringsRow}>
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    style={{ flex: 1 }}
+                    onPress={() => navigation.navigate('goals-list', { filterQuarter: 'Q1' })}
+                    accessibilityLabel={`Q1 performance score: ${q1Score > 0 ? q1Score + ' points' : 'no score yet'}. Tap to view Q1 goals`}
+                    accessibilityRole="button"
+                  >
+                    <QuarterScoreCard
+                      quarter="Q1"
+                      period="Jan – Jun 2026"
+                      score={q1Score}
+                      stats={q1Stats}
+                      colors={colors}
+                      isComplete={q1Stats.total > 0 && q1Stats.inProgress === 0 && q1Stats.notStarted === 0}
+                      onStatusPress={(status) => navigation.navigate('goals-list', { filterStatus: status, filterQuarter: 'Q1' })}
+                    />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    style={{ flex: 1 }}
+                    onPress={() => navigation.navigate('goals-list', { filterQuarter: 'Q2' })}
+                    accessibilityLabel={`Q2 performance score: ${q2Score > 0 ? q2Score + ' points' : 'no score yet'}. Tap to view Q2 goals`}
+                    accessibilityRole="button"
+                  >
+                    <QuarterScoreCard
+                      quarter="Q2"
+                      period="Jul – Dec 2026"
+                      score={q2Score}
+                      stats={q2Stats}
+                      colors={colors}
+                      isActive
+                      onStatusPress={(status) => navigation.navigate('goals-list', { filterStatus: status, filterQuarter: 'Q2' })}
+                    />
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
 
             {/* Performance score breakdown */}
             {(q1Score > 0 || q2Score > 0) && (() => {
@@ -197,7 +264,7 @@ export default function EmployeeDashboard({
                           <Text style={styles.scoreBreakdownMeta}>{g.quarter} · {g.weight} cr · {g.managerRating}/5 ★</Text>
                         </View>
                         <View style={styles.scoreBreakdownBarWrap}>
-                          <View style={[styles.scoreBreakdownBar, { width: `${barPct}%` as any, backgroundColor: barColor }]} />
+                          <View style={[styles.scoreBreakdownBar, { width: `${barPct}%` as DimensionValue, backgroundColor: barColor }]} />
                         </View>
                         <Text style={[styles.scoreBreakdownContrib, { color: barColor }]}>+{contribution}</Text>
                       </View>
@@ -235,6 +302,24 @@ export default function EmployeeDashboard({
               );
             })()}
 
+            {/* AI Reports */}
+            <TouchableOpacity
+              style={styles.aiReportsCard}
+              onPress={() => navigation.navigate('ai-reports', { employeeId: currentUserId! })}
+              activeOpacity={0.82}
+              accessibilityLabel="AI Performance Reports — coaching insights powered by Claude"
+              accessibilityRole="button"
+            >
+              <View style={styles.aiReportsLeft}>
+                <Text style={styles.aiReportsIcon}>✦</Text>
+                <View>
+                  <Text style={styles.aiReportsTitle}>AI Performance Reports</Text>
+                  <Text style={styles.aiReportsSub}>Coaching insights powered by Claude</Text>
+                </View>
+              </View>
+              <Text style={styles.aiReportsArrow}>›</Text>
+            </TouchableOpacity>
+
             {/* FY Performance Summary */}
             {employee?.status === 'completed_fiscal_year' && (() => {
               const q1Goals = myGoals.filter(g => g.quarter === 'Q1');
@@ -248,7 +333,7 @@ export default function EmployeeDashboard({
                     {[
                       { label: 'Q1 Score', value: q1Score !== null ? `${q1Score}` : '—', sub: `${q1Approved}/${q1Goals.length} approved` },
                       { label: 'Q2 Score', value: q2Score !== null ? `${q2Score}` : '—', sub: `${q2Approved}/${q2Goals.length} approved` },
-                      { label: 'FY Score', value: q1Score !== null && q2Score !== null && (q1Score > 0 || q2Score > 0) ? `${Math.round((q1Score + q2Score) / 2)}` : '—', sub: 'overall' },
+                      { label: 'FY Score', value: (q1Score > 0 || q2Score > 0) ? `${Math.round((q1Score + q2Score) / ((q1Score > 0 && q2Score > 0) ? 2 : 1))}` : '—', sub: 'overall' },
                     ].map(item => (
                       <View key={item.label} style={styles.fyScoreCell}>
                         <Text style={styles.fyScoreValue}>{item.value}</Text>
@@ -291,6 +376,8 @@ export default function EmployeeDashboard({
                 style={[styles.navRow, styles.navRowFirst]}
                 onPress={() => navigation.navigate('goals-list')}
                 activeOpacity={0.7}
+                accessibilityLabel={`My goals — ${myGoals.length} goals`}
+                accessibilityRole="button"
               >
                 <Text style={styles.navIcon}>◎</Text>
                 <Text style={styles.navLabel}>My Goals</Text>
@@ -302,6 +389,8 @@ export default function EmployeeDashboard({
                 style={styles.navRow}
                 onPress={() => navigation.navigate('daily-log')}
                 activeOpacity={0.7}
+                accessibilityLabel="Daily work log — record today"
+                accessibilityRole="button"
               >
                 <Text style={styles.navIcon}>📋</Text>
                 <Text style={styles.navLabel}>Daily Work Log</Text>
@@ -315,6 +404,8 @@ export default function EmployeeDashboard({
                   ? navigation.navigate('fy-report', { employeeId: currentUserId! })
                   : navigation.navigate('my-progress')}
                 activeOpacity={0.7}
+                accessibilityLabel={employee?.status === 'completed_fiscal_year' ? 'FY report — full year summary' : 'My progress — view progress'}
+                accessibilityRole="button"
               >
                 <Text style={styles.navIcon}>📊</Text>
                 <Text style={styles.navLabel}>
@@ -357,7 +448,7 @@ export default function EmployeeDashboard({
                           <Text style={styles.goalBreakdownWeight}>{g.weight} cr</Text>
                         </View>
                         <View style={styles.goalBreakdownBarWrap}>
-                          <View style={[styles.goalBreakdownBar, { width: `${pct}%` as any, backgroundColor: barColor }]} />
+                          <View style={[styles.goalBreakdownBar, { width: `${pct}%` as DimensionValue, backgroundColor: barColor }]} />
                         </View>
                         <Text style={[styles.goalBreakdownRating, { color: barColor }]}>{g.managerRating}/5 ★</Text>
                       </View>
@@ -392,7 +483,7 @@ export default function EmployeeDashboard({
                 <View style={styles.compareBarRow}>
                   <View style={styles.compareBarTrack}>
                     <View style={[styles.compareBarFill, {
-                      width: `${q1Stats.total > 0 ? (q1Stats.approved / q1Stats.total) * 100 : 0}%` as any,
+                      width: `${q1Stats.total > 0 ? (q1Stats.approved / q1Stats.total) * 100 : 0}%` as DimensionValue,
                       backgroundColor: colors.textSecondary,
                     }]} />
                   </View>
@@ -403,7 +494,7 @@ export default function EmployeeDashboard({
                 <View style={styles.compareBarRow}>
                   <View style={styles.compareBarTrack}>
                     <View style={[styles.compareBarFill, {
-                      width: `${q2Stats.total > 0 ? (q2Stats.approved / q2Stats.total) * 100 : 0}%` as any,
+                      width: `${q2Stats.total > 0 ? (q2Stats.approved / q2Stats.total) * 100 : 0}%` as DimensionValue,
                       backgroundColor: colors.textPrimary,
                     }]} />
                   </View>
@@ -454,7 +545,7 @@ export default function EmployeeDashboard({
                           </View>
                         </View>
                         <View style={styles.ratingBarWrap}>
-                          <View style={[styles.ratingBar, { width: `${barPct}%` as any, backgroundColor: barColor }]} />
+                          <View style={[styles.ratingBar, { width: `${barPct}%` as DimensionValue, backgroundColor: barColor }]} />
                         </View>
                         <Text style={[styles.ratingStars, { color: barColor }]}>
                           {'★'.repeat(goal.managerRating ?? 0)}{'☆'.repeat(5 - (goal.managerRating ?? 0))}
@@ -503,6 +594,10 @@ export default function EmployeeDashboard({
                         else navigation.navigate('daily-log');
                       }}
                       activeOpacity={0.8}
+                      accessibilityLabel={todo.goal
+                        ? `${todo.type === 'resubmit' ? 'Resubmit' : 'Submit'} evidence for ${todo.goal.title}`
+                        : "Today's daily log"}
+                      accessibilityRole="button"
                     >
                       <View style={[styles.actionTodoIcon, todo.type === 'resubmit' && { backgroundColor: colors.rejectedBg }]}>
                         <Text style={styles.actionTodoIconText}>{iconMap[todo.type]}</Text>
@@ -530,6 +625,8 @@ export default function EmployeeDashboard({
                     style={styles.actionTodoCard}
                     onPress={() => navigation.navigate('daily-log')}
                     activeOpacity={0.8}
+                    accessibilityLabel="Today's daily log — record your work activities"
+                    accessibilityRole="button"
                   >
                     <View style={[styles.actionTodoIcon, { backgroundColor: colors.inProgressBg }]}>
                       <Text style={styles.actionTodoIconText}>📅</Text>
@@ -695,6 +792,20 @@ function createStyles(C: ColorPalette) {
     reportingDesig: { fontSize: 11, color: C.textSecondary, marginTop: 1 },
     reportingDot: { width: 7, height: 7, borderRadius: 4, flexShrink: 0 },
 
+    emptyGoalsCard: {
+      backgroundColor: C.card,
+      borderRadius: Radius.lg,
+      padding: Spacing.xl,
+      alignItems: 'center',
+      marginBottom: Spacing.lg,
+      borderWidth: 1,
+      borderColor: C.border,
+      borderStyle: 'dashed',
+    },
+    emptyGoalsIcon: { fontSize: 32, marginBottom: Spacing.sm, color: C.textMuted },
+    emptyGoalsTitle: { ...Typography.h4, color: C.textSecondary, marginBottom: 6 },
+    emptyGoalsSub: { fontSize: 13, color: C.textMuted, textAlign: 'center', lineHeight: 19 },
+
     alertCard: {
       backgroundColor: C.rejectedBg,
       borderRadius: Radius.lg,
@@ -719,6 +830,28 @@ function createStyles(C: ColorPalette) {
     alertSub: { fontSize: 12, color: C.textSecondary, marginTop: 2 },
     alertArrow: { fontSize: 20, color: C.rejected },
 
+    dueSoonCard: {
+      backgroundColor: C.pendingBg,
+      borderRadius: Radius.lg,
+      padding: Spacing.md,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      marginBottom: Spacing.lg,
+      borderLeftWidth: 3,
+      borderLeftColor: C.pending,
+      borderWidth: 1,
+      borderColor: C.pendingBg,
+    },
+    dueSoonIconWrap: {
+      width: 30, height: 30, borderRadius: Radius.full,
+      backgroundColor: C.pending,
+      alignItems: 'center', justifyContent: 'center',
+    },
+    dueSoonIconText: { fontSize: 15 },
+    dueSoonTitle: { fontSize: 14, fontWeight: '700', color: C.pending },
+    dueSoonArrow: { fontSize: 20, color: C.pending },
+
     sectionHeader: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -735,6 +868,24 @@ function createStyles(C: ColorPalette) {
     },
 
     ringsRow: { flexDirection: 'row', gap: 10, marginBottom: Spacing.lg },
+
+    aiReportsCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      backgroundColor: C.card,
+      borderRadius: Radius.lg,
+      padding: Spacing.md,
+      marginBottom: Spacing.md,
+      borderWidth: 1,
+      borderColor: C.employeePrimary + '40',
+      ...Shadow.sm,
+    },
+    aiReportsLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
+    aiReportsIcon: { fontSize: 22, color: C.employeePrimary },
+    aiReportsTitle: { fontSize: 14, fontWeight: '700', color: C.textPrimary },
+    aiReportsSub: { fontSize: 12, color: C.textMuted, marginTop: 2 },
+    aiReportsArrow: { fontSize: 20, color: C.textMuted, fontWeight: '300' },
 
     deltaCard: {
       flexDirection: 'row',
@@ -792,7 +943,7 @@ function createStyles(C: ColorPalette) {
     nudgeTitle: { fontSize: 14, fontWeight: '700', color: C.pending },
     nudgeSub: { fontSize: 12, color: C.textSecondary, marginTop: 2, lineHeight: 17, marginBottom: 6 },
     nudgeGoalBtn: { marginTop: 6 },
-    nudgeGoalRow: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: C.pending + '18', borderRadius: Radius.sm, paddingVertical: 6, paddingHorizontal: 8 },
+    nudgeGoalRow: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: C.pending + '18', borderRadius: Radius.sm, paddingVertical: 6, paddingHorizontal: 8, minHeight: 44 },
     nudgeGoalDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: C.pending },
     nudgeGoal: { fontSize: 12, color: C.textSecondary, flex: 1 },
     nudgeGoalArrow: { fontSize: 14, color: C.pending, fontWeight: '700' },

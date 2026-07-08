@@ -29,7 +29,9 @@ export default function MiniBarChart({
 }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
-  const max = maxValue ?? Math.max(...data.map(d => d.value), 1);
+  const max = (maxValue !== undefined && maxValue > 0)
+    ? maxValue
+    : Math.max(...data.map(d => d.value), 1);
 
   return (
     <View style={styles.root}>

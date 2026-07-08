@@ -2,16 +2,46 @@
   "expo": {
     "name": "GrowTracker",
     "slug": "GrowTracker",
+    "owner": "suni19766",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#E6F4FE"
+    },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.growtracker.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "GrowTracker needs camera access to attach photos to evidence submissions.",
+        "NSPhotoLibraryUsageDescription": "GrowTracker needs photo library access to attach images to evidence submissions.",
+        "NSPhotoLibraryAddUsageDescription": "GrowTracker needs permission to save photos to your library.",
+        "NSLocationWhenInUseUsageDescription": "GrowTracker uses your location to geotag daily work log entries."
+      }
     },
     "android": {
+      "package": "com.growtracker.app",
+      "softwareKeyboardLayoutMode": "resize",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.VIBRATE",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
+        "android.permission.ACCESS_MEDIA_LOCATION",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.READ_MEDIA_AUDIO"
+      ],
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#111111",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -21,6 +51,50 @@
     "web": {
       "favicon": "./assets/favicon.png",
       "bundler": "metro"
+    },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#4f46e5",
+          "defaultChannel": "default"
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "GrowTracker needs camera access to attach photos to evidence submissions."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "GrowTracker needs photo library access to attach images to evidence submissions.",
+          "cameraPermission": "GrowTracker needs camera access to attach photos to evidence submissions."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "GrowTracker uses your location to geotag daily work log entries."
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "GrowTracker needs access to your photos to attach them to evidence submissions.",
+          "savePhotosPermission": "GrowTracker needs permission to save photos to your library.",
+          "isAccessMediaLocationEnabled": true
+        }
+      ],
+      "expo-font",
+      "expo-secure-store"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "d61a7cd7-9004-403d-acf5-58e060c52a16"
+      }
     }
   }
 }

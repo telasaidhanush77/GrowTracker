@@ -1,0 +1,29 @@
+# 03_location_denied.yaml
+# Location permission — DENIED
+#
+# WHAT THIS TESTS:
+#   When foreground location permission is pre-denied:
+#   1. The app launches and logs in without crashing
+#   2. The dashboard is accessible
+#   3. No location-related crash or error UI appears
+#
+# NOTE: No screen currently requests location permission in the UI flow.
+# This flow confirms the denied state does not cause startup crashes.
+# Extend when the daily log geotag feature is implemented.
+#
+# CREDENTIALS: Set EMPLOYEE_USER and EMPLOYEE_PASS in e2e/.env
+
+appId: com.growtracker.app
+---
+
+- launchApp:
+    clearState: true
+    permissions:
+      location: deny
+
+- runFlow: "../../helpers/login_employee.yaml"
+
+- assertVisible: "My Workspace"
+- takeScreenshot: "01a_location_denied_dashboard"
+- assertNotVisible: "Something went wrong"
+- assertNotVisible: "permission-denied-banner"

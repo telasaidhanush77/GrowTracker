@@ -1,0 +1,130 @@
+# 03_admin_back_button.yaml — Android hardware back button on Admin screens
+#
+# WHAT THIS TESTS:
+#   Every secondary screen reachable from the Admin Dashboard is opened,
+#   then the Android hardware back button is pressed. The app must:
+#     (a) Return to the Admin Dashboard — no blank screen, no crash.
+#     (b) Show the correct dashboard tab content.
+#
+# PREREQUISITE — WILL FAIL WITHOUT BackHandler:
+#   See README.md. The fix is a single useEffect in App.tsx.
+#
+# CREDENTIALS: Set ADMIN_USER and ADMIN_PASS in e2e/.env
+
+appId: com.growtracker.app
+---
+
+- launchApp:
+    clearState: true
+- runFlow: "../../helpers/login_admin.yaml"
+- assertVisible: "Overview"
+
+# ── 1. BACK FROM ONBOARD EMPLOYEE ────────────────────────────────────────────
+# Navigate: Actions tab → "Onboard New Employee" button
+
+- tapOn: "Actions"
+- waitForAnimationToEnd
+- tapOn: "Onboard New Employee"
+- waitForAnimationToEnd
+- assertVisible: "Onboard New Employee"
+- takeScreenshot: "01a_onboard_employee_open"
+- pressKey: Back
+- waitForAnimationToEnd
+# Should return to Admin Dashboard on the Actions tab
+- assertVisible: "Onboard New Employee"
+# NOTE: "Onboard New Employee" appears on both the Actions tab card AND the screen
+# heading. Check the screenshot — the Actions tab cards should be visible (not
+# the full-screen onboarding form), confirming we're back on the dashboard.
+- takeScreenshot: "01b_after_back_from_onboard"
+
+# ── 2. BACK FROM GOALS LIST (via People tab → employee card) ─────────────────
+# Navigate: People tab → tap an active employee card → Goals List (read-only)
+
+- tapOn: "People"
+- waitForAnimationToEnd
+- assertVisible: "People"
+# Filter to Employees to find a card with Goals List navigation
+- tapOn: "Employees"
+- waitForAnimationToEnd
+# Tap the first employee card that is NOT in onboarding/completed state
+# These cards navigate to goals-list with readOnly=true
+- scrollUntilVisible:
+    element:
+      text: "View Goals"
+    direction: DOWN
+    timeout: 8000
+- tapOn: "View Goals"
+- waitForAnimationToEnd
+- assertVisible: "Q1"
+- takeScreenshot: "02a_goals_list_read_only_open"
+- pressKey: Back
+- waitForAnimationToEnd
+- assertVisible: "People"
+- assertNotVisible: "Q1"
+- takeScreenshot: "02b_after_back_from_goals_list"
+
+# ── 3. BACK FROM NOTIFICATIONS ───────────────────────────────────────────────
+# Admin Actions tab has a dedicated "Notifications" button in addition to the 🔔
+
+- tapOn: "Actions"
+- waitForAnimationToEnd
+- tapOn: "Notifications"
+- waitForAnimationToEnd
+- assertVisible: "Notifications"
+- takeScreenshot: "03a_notifications_open"
+- pressKey: Back
+- waitForAnimationToEnd
+- assertVisible: "Overview"
+- assertNotVisible: "Notifications"
+- takeScreenshot: "03b_after_back_from_notifications"
+
+# ── 4. BACK FROM NOTIFICATIONS (via 🔔 header) ───────────────────────────────
+
+- tapOn: "Overview"
+- waitForAnimationToEnd
+- tapOn: "🔔"
+- waitForAnimationToEnd
+- assertVisible: "Notifications"
+- takeScreenshot: "04a_notifications_via_bell_open"
+- pressKey: Back
+- waitForAnimationToEnd
+- assertVisible: "Overview"
+- takeScreenshot: "04b_after_back_from_notifications_bell"
+
+# ── 5. BACK FROM PROFILE ─────────────────────────────────────────────────────
+
+- tapOn: "···"
+- waitForAnimationToEnd
+- tapOn: "My Profile"
+- waitForAnimationToEnd
+- assertVisible: "Sign Out"
+- takeScreenshot: "05a_profile_open"
+- pressKey: Back
+- waitForAnimationToEnd
+- assertVisible: "Overview"
+- assertNotVisible: "Sign Out"
+- takeScreenshot: "05b_after_back_from_profile"
+
+# ── 6. BACK FROM ROOT DASHBOARD ──────────────────────────────────────────────
+
+- tapOn: "Overview"
+- waitForAnimationToEnd
+- takeScreenshot: "06a_root_dashboard_before_back"
+- pressKey: Back
+- waitForAnimationToEnd
+- launchApp
+- extendedWaitUntil:
+    visible:
+      text: "Overview"
+    timeout: 20000
+- takeScreenshot: "06b_after_root_back_relaunch"
+
+# ── 7. NO BLANK SCREEN DURING RAPID FORWARD+BACK ────────────────────────────
+
+- tapOn: "Actions"
+- waitForAnimationToEnd
+- tapOn: "Onboard New Employee"
+- pressKey: Back
+- waitForAnimationToEnd
+- assertVisible: "Actions"
+- takeScreenshot: "07_rapid_forward_back_no_blank"

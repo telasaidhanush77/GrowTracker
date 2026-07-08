@@ -1,0 +1,16 @@
+# Re-usable subflow: log in as the pre-seeded test employee.
+# Precondition: app is showing the Splash screen.
+# Postcondition: app is on the Employee Dashboard (Overview tab visible).
+appId: com.growtracker.app
+---
+- tapOn: "Employee"
+- assertVisible: "Employee Portal"
+- tapOn:
+    text: "e.g. john.doe or EMP-0001"
+- inputText: "${EMPLOYEE_USER}"
+- tapOn:
+    text: "Enter your password"
+- inputText: "${EMPLOYEE_PASS}"
+- hideKeyboard
+- tapOn: "Sign In"
+- assertVisible: "Overview"

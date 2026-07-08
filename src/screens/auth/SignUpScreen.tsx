@@ -1,7 +1,9 @@
-import { useMemo, useState } from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import { forwardRef, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator, KeyboardAvoidingView, Platform,
-  ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View,
+  ActivityIndicator, DimensionValue, KeyboardAvoidingView, KeyboardTypeOptions,
+  Platform, Pressable, SafeAreaView, ScrollView, StatusBar,
+  StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -16,17 +18,18 @@ const ROLE_META: Record<Role, { label: string; icon: string; color: (C: ColorPal
 };
 
 function passwordStrength(pwd: string): { label: string; color: string; pct: number } {
+  if (pwd.length < 8) return { label: 'Too short', color: '#EF4444', pct: 0 };
   let score = 0;
-  if (pwd.length >= 8) score++;
   if (/[A-Z]/.test(pwd)) score++;
+  if (/[a-z]/.test(pwd)) score++;
   if (/[0-9]/.test(pwd)) score++;
   if (/[^A-Za-z0-9]/.test(pwd)) score++;
   const map = [
-    { label: 'Too short', color: '#EF4444', pct: 0 },
-    { label: 'Weak',      color: '#F97316', pct: 25 },
-    { label: 'Fair',      color: '#EAB308', pct: 50 },
-    { label: 'Good',      color: '#22C55E', pct: 75 },
-    { label: 'Strong',    color: '#10B981', pct: 100 },
+    { label: 'Weak',   color: '#F97316', pct: 25 },
+    { label: 'Fair',   color: '#EAB308', pct: 50 },
+    { label: 'Fair',   color: '#EAB308', pct: 50 },
+    { label: 'Good',   color: '#22C55E', pct: 75 },
+    { label: 'Strong', color: '#10B981', pct: 100 },
   ];
   return map[Math.min(score, 4)];
 }
@@ -34,7 +37,7 @@ function passwordStrength(pwd: string): { label: string; color: string; pct: num
 interface Props {
   role: Role;
   onBack: () => void;
-  onSuccess: (userId: string, uniqueId: string) => void;
+  onSuccess: (userId: string, uniqueId: string, username: string) => void;
   onSignIn: () => void;
 }
 
@@ -60,6 +63,14 @@ export default function SignUpScreen({ role, onBack, onSuccess, onSignIn }: Prop
 
   const strength = passwordStrength(password);
 
+  const firstNameRef = useRef<TextInput>(null);
+  const lastNameRef  = useRef<TextInput>(null);
+  const emailRef     = useRef<TextInput>(null);
+  const usernameRef  = useRef<TextInput>(null);
+  const mobileRef    = useRef<TextInput>(null);
+  const passwordRef  = useRef<TextInput>(null);
+  const confirmRef   = useRef<TextInput>(null);
+
   function autoUsername() {
     if (!username && firstName) {
       setUsername((firstName.toLowerCase().trim() + (lastName ? '.' + lastName.toLowerCase().trim() : '')).replace(/\s+/g, ''));
@@ -74,6 +85,10 @@ export default function SignUpScreen({ role, onBack, onSuccess, onSignIn }: Prop
     if (!username.trim()) return setError('Username is required.');
     if (username.trim().length < 3) return setError('Username must be at least 3 characters.');
     if (password.length < 8) return setError('Password must be at least 8 characters.');
+    if (!/[A-Z]/.test(password)) return setError('Password must contain at least one uppercase letter.');
+    if (!/[a-z]/.test(password)) return setError('Password must contain at least one lowercase letter.');
+    if (!/[^A-Za-z0-9]/.test(password)) return setError('Password must contain at least one special character (e.g. @, #, !).');
+    if (strength.pct < 75) return setError('Password is too weak. Use a mix of uppercase, lowercase, numbers, and special characters.');
     if (password !== confirm) return setError('Passwords do not match.');
     if (!terms) return setError('Please accept the Terms & Conditions to continue.');
 
@@ -82,18 +97,31 @@ export default function SignUpScreen({ role, onBack, onSuccess, onSignIn }: Prop
     setLoading(false);
 
     if (result.ok && result.user) {
-      onSuccess(result.user.id, result.user.employeeCode);
+      onSuccess(result.user.id, result.user.employeeCode, result.user.username);
     } else {
       setError(result.error ?? 'Sign up failed. Please try again.');
     }
   }
 
   return (
-    <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+    <SafeAreaView style={styles.safeArea}>
+      <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        automaticallyAdjustKeyboardInsets
+      >
 
-        <TouchableOpacity style={styles.backBtn} onPress={onBack} activeOpacity={0.7}>
-          <Text style={styles.backBtnText}>‹ Back</Text>
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={onBack}
+          activeOpacity={0.7}
+          accessibilityLabel="Go back"
+          accessibilityRole="button"
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 16 }}
+        >
+          <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
         </TouchableOpacity>
 
         <View style={styles.headerWrap}>
@@ -116,51 +144,76 @@ export default function SignUpScreen({ role, onBack, onSuccess, onSignIn }: Prop
           <View style={{ flex: 1 }}>
             <Text style={styles.label}>First Name *</Text>
             <TextInput
+              ref={firstNameRef}
               style={[styles.input, { borderColor: firstName ? accent + '80' : colors.border }]}
               value={firstName}
               onChangeText={setFirstName}
               onBlur={autoUsername}
               placeholder="First"
               placeholderTextColor={colors.textMuted}
+              returnKeyType="next"
+              onSubmitEditing={() => lastNameRef.current?.focus()}
+              blurOnSubmit={false}
+              accessibilityLabel="First name"
             />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.label}>Last Name *</Text>
             <TextInput
+              ref={lastNameRef}
               style={[styles.input, { borderColor: lastName ? accent + '80' : colors.border }]}
               value={lastName}
               onChangeText={setLastName}
               onBlur={autoUsername}
               placeholder="Last"
               placeholderTextColor={colors.textMuted}
+              returnKeyType="next"
+              onSubmitEditing={() => emailRef.current?.focus()}
+              blurOnSubmit={false}
+              accessibilityLabel="Last name"
             />
           </View>
         </View>
 
-        <FieldInput label="Email Address *" value={email} onChangeText={setEmail} placeholder="you@example.com" keyboardType="email-address" autoCapitalize="none" accent={accent} colors={colors} styles={styles} />
-        <FieldInput label="Username *" value={username} onChangeText={setUsername} placeholder="e.g. john.doe" autoCapitalize="none" accent={accent} colors={colors} styles={styles} hint="Minimum 3 characters" />
-        <FieldInput label="Mobile Number" value={mobile} onChangeText={setMobile} placeholder="+91 9876543210" keyboardType="phone-pad" accent={accent} colors={colors} styles={styles} />
+        <FieldInput ref={emailRef} label="Email Address *" value={email} onChangeText={setEmail} placeholder="you@example.com" keyboardType="email-address" autoCapitalize="none" accent={accent} colors={colors} styles={styles} returnKeyType="next" onSubmitEditing={() => usernameRef.current?.focus()} blurOnSubmit={false} />
+        <FieldInput ref={usernameRef} label="Username *" value={username} onChangeText={setUsername} placeholder="e.g. john.doe" autoCapitalize="none" accent={accent} colors={colors} styles={styles} hint="Minimum 3 characters" returnKeyType="next" onSubmitEditing={() => mobileRef.current?.focus()} blurOnSubmit={false} />
+        <FieldInput ref={mobileRef} label="Mobile Number" value={mobile} onChangeText={t => setMobile(t.replace(/[^0-9+\-\s()]/g, ''))} placeholder="+91 9876543210" keyboardType="phone-pad" accent={accent} colors={colors} styles={styles} returnKeyType="next" onSubmitEditing={() => passwordRef.current?.focus()} blurOnSubmit={false} />
 
         {/* Password */}
         <View style={styles.fieldWrap}>
           <Text style={styles.label}>Password *</Text>
           <View style={styles.pwdWrap}>
             <TextInput
+              ref={passwordRef}
               style={[styles.input, styles.pwdInput, { borderColor: password ? accent + '80' : colors.border }]}
               value={password}
               onChangeText={setPassword}
               placeholder="Min. 8 characters"
               placeholderTextColor={colors.textMuted}
               secureTextEntry={!showPwd}
+              returnKeyType="next"
+              onSubmitEditing={() => confirmRef.current?.focus()}
+              blurOnSubmit={false}
+              accessibilityLabel="Password"
+              accessibilityHint="Minimum 8 characters"
             />
-            <TouchableOpacity style={styles.eyeBtn} onPress={() => setShowPwd(v => !v)}>
-              <Text style={styles.eyeIcon}>{showPwd ? '🙈' : '👁'}</Text>
+            <TouchableOpacity
+              style={styles.eyeBtn}
+              onPress={() => setShowPwd(v => !v)}
+              accessibilityLabel={showPwd ? 'Hide password' : 'Show password'}
+              accessibilityRole="button"
+              hitSlop={{ top: 0, bottom: 0, left: 14, right: 14 }}
+            >
+              <Ionicons name={showPwd ? 'eye-off-outline' : 'eye-outline'} size={20} color={colors.textMuted} />
             </TouchableOpacity>
           </View>
+          <Text style={styles.pwdRequirements}>
+            Min. 8 characters · one uppercase (A–Z) · one lowercase (a–z) · one special character (@, #, !, etc.)
+          </Text>
           {password.length > 0 && (
             <View style={styles.strengthRow}>
               <View style={styles.strengthTrack}>
-                <View style={[styles.strengthFill, { width: `${strength.pct}%` as any, backgroundColor: strength.color }]} />
+                <View style={[styles.strengthFill, { width: `${strength.pct}%` as DimensionValue, backgroundColor: strength.color }]} />
               </View>
               <Text style={[styles.strengthLabel, { color: strength.color }]}>{strength.label}</Text>
             </View>
@@ -172,17 +225,27 @@ export default function SignUpScreen({ role, onBack, onSuccess, onSignIn }: Prop
           <Text style={styles.label}>Confirm Password *</Text>
           <View style={styles.pwdWrap}>
             <TextInput
+              ref={confirmRef}
               style={[styles.input, styles.pwdInput, {
-                borderColor: confirm ? (confirm === password ? '#22C55E' : colors.rejected) : colors.border,
+                borderColor: confirm && confirm !== password ? colors.rejected : colors.border,
               }]}
               value={confirm}
               onChangeText={setConfirm}
               placeholder="Re-enter password"
               placeholderTextColor={colors.textMuted}
               secureTextEntry={!showConfirm}
+              returnKeyType="done"
+              onSubmitEditing={handleSignUp}
+              accessibilityLabel="Confirm password"
             />
-            <TouchableOpacity style={styles.eyeBtn} onPress={() => setShowConfirm(v => !v)}>
-              <Text style={styles.eyeIcon}>{showConfirm ? '🙈' : '👁'}</Text>
+            <TouchableOpacity
+              style={styles.eyeBtn}
+              onPress={() => setShowConfirm(v => !v)}
+              accessibilityLabel={showConfirm ? 'Hide confirm password' : 'Show confirm password'}
+              accessibilityRole="button"
+              hitSlop={{ top: 0, bottom: 0, left: 14, right: 14 }}
+            >
+              <Ionicons name={showConfirm ? 'eye-off-outline' : 'eye-outline'} size={20} color={colors.textMuted} />
             </TouchableOpacity>
           </View>
           {confirm.length > 0 && confirm !== password && (
@@ -191,7 +254,14 @@ export default function SignUpScreen({ role, onBack, onSuccess, onSignIn }: Prop
         </View>
 
         {/* Terms */}
-        <TouchableOpacity style={styles.termsRow} onPress={() => setTerms(v => !v)} activeOpacity={0.7}>
+        <Pressable
+          style={styles.termsRow}
+          onPress={() => setTerms(v => !v)}
+          testID="terms-checkbox"
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: terms }}
+          accessibilityLabel="Accept Terms and Conditions"
+        >
           <View style={[styles.checkbox, terms && { backgroundColor: accent, borderColor: accent }]}>
             {terms && <Text style={styles.checkmark}>✓</Text>}
           </View>
@@ -201,7 +271,7 @@ export default function SignUpScreen({ role, onBack, onSuccess, onSignIn }: Prop
             {' '}and{' '}
             <Text style={[styles.termsLink, { color: accent }]}>Privacy Policy</Text>
           </Text>
-        </TouchableOpacity>
+        </Pressable>
 
         {/* Submit */}
         <TouchableOpacity
@@ -209,6 +279,10 @@ export default function SignUpScreen({ role, onBack, onSuccess, onSignIn }: Prop
           onPress={handleSignUp}
           disabled={loading}
           activeOpacity={0.85}
+          testID="create-account-btn"
+          accessibilityLabel={loading ? 'Creating account' : 'Create account'}
+          accessibilityRole="button"
+          accessibilityState={{ disabled: loading }}
         >
           {loading
             ? <ActivityIndicator color="#fff" />
@@ -217,26 +291,39 @@ export default function SignUpScreen({ role, onBack, onSuccess, onSignIn }: Prop
 
         <View style={styles.signInRow}>
           <Text style={styles.signInRowText}>Already have an account?  </Text>
-          <TouchableOpacity onPress={onSignIn} activeOpacity={0.7}>
+          <TouchableOpacity
+            onPress={onSignIn}
+            activeOpacity={0.7}
+            accessibilityLabel="Already have an account? Sign in"
+            accessibilityRole="button"
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
             <Text style={[styles.signInLink, { color: accent }]}>Sign In</Text>
           </TouchableOpacity>
         </View>
 
         <View style={{ height: 40 }} />
       </ScrollView>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
-function FieldInput({ label, value, onChangeText, placeholder, keyboardType, autoCapitalize, accent, colors, styles, hint }: {
+const FieldInput = forwardRef<TextInput, {
   label: string; value: string; onChangeText: (v: string) => void; placeholder: string;
-  keyboardType?: any; autoCapitalize?: any; accent: string; colors: ColorPalette;
+  keyboardType?: KeyboardTypeOptions; autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters'; accent: string; colors: ColorPalette;
   styles: ReturnType<typeof createStyles>; hint?: string;
-}) {
+  returnKeyType?: 'next' | 'done'; onSubmitEditing?: () => void; blurOnSubmit?: boolean;
+}>(function FieldInput(
+  { label, value, onChangeText, placeholder, keyboardType, autoCapitalize, accent, colors, styles, hint, returnKeyType, onSubmitEditing, blurOnSubmit },
+  ref
+) {
+  const a11yLabel = label.replace(/\s*\*$/, '').trim();
   return (
     <View style={styles.fieldWrap}>
       <Text style={styles.label}>{label}</Text>
       <TextInput
+        ref={ref}
         style={[styles.input, { borderColor: value ? accent + '80' : colors.border }]}
         value={value}
         onChangeText={onChangeText}
@@ -245,19 +332,30 @@ function FieldInput({ label, value, onChangeText, placeholder, keyboardType, aut
         keyboardType={keyboardType}
         autoCapitalize={autoCapitalize ?? 'words'}
         autoCorrect={false}
+        autoComplete="off"
+        returnKeyType={returnKeyType}
+        onSubmitEditing={onSubmitEditing}
+        blurOnSubmit={blurOnSubmit}
+        accessibilityLabel={a11yLabel}
       />
       {hint && <Text style={styles.hintText}>{hint}</Text>}
     </View>
   );
-}
+});
 
 function createStyles(C: ColorPalette) {
   return StyleSheet.create({
+    safeArea: { flex: 1, backgroundColor: C.bg },
     root: { flex: 1, backgroundColor: C.bg },
-    content: { padding: Spacing.xl, paddingTop: Spacing.lg },
+    content: {
+      padding: Spacing.xl,
+      paddingTop: Platform.OS === 'android'
+        ? (StatusBar.currentHeight ?? 24) + Spacing.lg
+        : Spacing.lg,
+      paddingBottom: 80,
+    },
 
-    backBtn: { marginBottom: Spacing.lg },
-    backBtnText: { fontSize: 16, color: C.textSecondary, fontWeight: '600' },
+    backBtn: { marginBottom: Spacing.lg, alignSelf: 'flex-start' },
 
     headerWrap: { marginBottom: Spacing.lg },
     roleBadge: {
@@ -281,11 +379,13 @@ function createStyles(C: ColorPalette) {
       fontSize: 15, color: C.textPrimary, ...Shadow.sm,
     },
     hintText: { fontSize: 11, color: C.textMuted, marginTop: 4 },
+    pwdRequirements: {
+      fontSize: 11, color: C.textMuted, marginTop: 6, lineHeight: 17,
+    },
 
     pwdWrap: { position: 'relative' },
     pwdInput: { paddingRight: 48 },
     eyeBtn: { position: 'absolute', right: 12, top: 0, bottom: 0, justifyContent: 'center' },
-    eyeIcon: { fontSize: 18 },
 
     strengthRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 },
     strengthTrack: { flex: 1, height: 4, backgroundColor: C.border, borderRadius: Radius.full, overflow: 'hidden' },

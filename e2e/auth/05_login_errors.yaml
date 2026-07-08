@@ -1,0 +1,54 @@
+appId: com.growtracker.app
+---
+- launchApp:
+    clearState: true
+
+- tapOn: "Employee"
+- assertVisible: "Employee Portal"
+
+# ── Error: empty fields ──────────────────────────────────────────────────────
+- tapOn: "Sign In"
+- assertVisible: "Please enter your username/email and password."
+
+# ── Error: unknown username ──────────────────────────────────────────────────
+- tapOn:
+    text: "e.g. john.doe or EMP-0001"
+- inputText: "nobody.knows"
+- tapOn:
+    text: "Enter your password"
+- inputText: "AnyPass1!"
+- hideKeyboard
+- tapOn: "Sign In"
+- assertVisible: "No account found with that username or ID."
+
+# Clear fields for next case
+- tapOn:
+    text: "nobody.knows"
+- eraseText: 100
+- inputText: "${EMPLOYEE_USER}"
+
+# ── Error: wrong password ────────────────────────────────────────────────────
+- tapOn:
+    text: "Enter your password"
+- eraseText: 100
+- inputText: "WrongPass999!"
+- hideKeyboard
+- tapOn: "Sign In"
+- assertVisible: "Incorrect email or password."
+
+# ── Error: wrong portal (employee credentials on Manager portal) ─────────────
+- launchApp:
+    clearState: true
+- assertVisible: "SIGN IN AS"
+- tapOn: "Manager"
+- assertVisible: "Manager Portal"
+- tapOn:
+    text: "e.g. john.doe or EMP-0001"
+- inputText: "${EMPLOYEE_USER}"
+- tapOn:
+    text: "Enter your password"
+- inputText: "${EMPLOYEE_PASS}"
+- hideKeyboard
+- tapOn: "Sign In"
+- waitForAnimationToEnd
+- assertVisible: "This account is registered as Employee. Please use the Employee portal to sign in."

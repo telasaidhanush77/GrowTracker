@@ -1,0 +1,29 @@
+appId: com.growtracker.app
+---
+- launchApp:
+    clearState: true
+
+- runFlow: "../helpers/login_employee.yaml"
+
+# Navigate to Daily Work Log from the dashboard
+- tapOn: "Daily Work Log"
+- assertVisible: "Daily Log"
+- assertVisible: "Tasks Completed"
+
+# Type a task, dismiss keyboard first, then tap "+" to add it to the task list
+- tapOn:
+    text: "Describe a task you completed..."
+- inputText: "Completed E2E smoke test run and verified all flows pass."
+- hideKeyboard
+- tapOn: "+"
+- waitForAnimationToEnd
+
+# Verify task was added to the list
+- assertVisible: "Completed E2E smoke test run and verified all flows pass."
+
+# Save — button changes text from "Save Daily Log" to "✓ Saved"
+- tapOn: "Save Daily Log"
+- waitForAnimationToEnd
+
+# Confirm save: the button text is no longer "Save Daily Log"
+- assertNotVisible: "Save Daily Log"

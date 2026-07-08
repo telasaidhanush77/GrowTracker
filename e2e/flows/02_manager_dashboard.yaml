@@ -1,0 +1,26 @@
+appId: com.growtracker.app
+---
+- launchApp:
+    clearState: true
+
+- runFlow: "../helpers/login_manager.yaml"
+
+# ── Dashboard tab (default) ──────────────────────────────────────────────────
+- assertVisible: "Dashboard"
+
+# ── Team tab ────────────────────────────────────────────────────────────────
+- tapOn: "Team"
+- assertVisible: "Team"
+
+# ── Analytics tab ───────────────────────────────────────────────────────────
+- tapOn: "Analytics"
+- assertVisible: "Analytics"
+
+# ── Back to Dashboard tab ───────────────────────────────────────────────────
+- tapOn: "Dashboard"
+- assertVisible: "Dashboard"
+
+# ── Sign out via header menu ─────────────────────────────────────────────────
+- tapOn: "···"
+- tapOn: "Sign Out"
+- assertVisible: "SIGN IN AS"

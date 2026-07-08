@@ -1,0 +1,11 @@
+appId: com.growtracker.app
+---
+- launchApp:
+    clearState: true
+
+# Login as pre-seeded test manager
+- runFlow: "../helpers/login_manager.yaml"
+
+# Confirm we land on the Manager Dashboard
+- assertVisible: "Dashboard"
+- assertVisible: "Team"

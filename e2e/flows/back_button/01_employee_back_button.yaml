@@ -1,0 +1,151 @@
+# 01_employee_back_button.yaml — Android hardware back button on Employee screens
+#
+# WHAT THIS TESTS:
+#   Every secondary screen reachable from the Employee Dashboard is opened,
+#   then the Android hardware back button is pressed. The app must:
+#     (a) Return to the Employee Dashboard — no blank screen, no crash.
+#     (b) Show the correct parent screen content (My Workspace section).
+#   At the root dashboard the back button should background the app; a
+#   re-launch must restore the session (not show a blank or crash screen).
+#
+# PREREQUISITE — WILL FAIL WITHOUT BackHandler:
+#   The app has NO BackHandler.addEventListener() anywhere. Hardware back from
+#   any secondary screen currently EXITS the app. Every "pressKey: Back" step
+#   below will fail until the fix in README.md is applied to App.tsx.
+#
+# ANDROID ONLY: pressKey: Back has no equivalent on iOS. On iOS use the "‹"
+#   header button instead (tested separately in navigation/ flows).
+#
+# CREDENTIALS: Set EMPLOYEE_USER and EMPLOYEE_PASS in e2e/.env
+
+appId: com.growtracker.app
+---
+
+- launchApp:
+    clearState: true
+- runFlow: "../../helpers/login_employee.yaml"
+- assertVisible: "My Workspace"
+
+# ── 1. BACK FROM GOALS LIST ──────────────────────────────────────────────────
+# Navigate: Overview → "My Goals" card → Goals List
+
+- tapOn: "My Goals"
+- waitForAnimationToEnd
+- assertVisible: "Q1"
+- takeScreenshot: "01a_goals_list_open"
+# EXPECTED: hardware back returns to Employee Dashboard
+# ACTUAL TODAY: app exits (no BackHandler)
+- pressKey: Back
+- waitForAnimationToEnd
+- assertVisible: "My Workspace"
+- assertNotVisible: "Q1"
+- takeScreenshot: "01b_after_back_from_goals"
+
+# ── 2. BACK FROM DAILY LOG ───────────────────────────────────────────────────
+# Navigate: Overview → "Daily Work Log" card → Daily Log
+
+- tapOn: "Daily Work Log"
+- waitForAnimationToEnd
+- assertVisible: "Daily Log"
+- takeScreenshot: "02a_daily_log_open"
+- pressKey: Back
+- waitForAnimationToEnd
+- assertVisible: "My Workspace"
+- assertNotVisible: "Daily Log"
+- takeScreenshot: "02b_after_back_from_daily_log"
+
+# ── 3. BACK FROM NOTIFICATIONS ───────────────────────────────────────────────
+# Navigate: 🔔 header button → Notifications
+
+- tapOn: "🔔"
+- waitForAnimationToEnd
+- assertVisible: "Notifications"
+- takeScreenshot: "03a_notifications_open"
+- pressKey: Back
+- waitForAnimationToEnd
+- assertVisible: "My Workspace"
+- assertNotVisible: "Notifications"
+- takeScreenshot: "03b_after_back_from_notifications"
+
+# ── 4. BACK FROM PROFILE ─────────────────────────────────────────────────────
+# Navigate: ··· header menu → My Profile → Profile screen
+
+- tapOn: "···"
+- waitForAnimationToEnd
+- tapOn: "My Profile"
+- waitForAnimationToEnd
+- assertVisible: "Sign Out"
+- takeScreenshot: "04a_profile_open"
+- pressKey: Back
+- waitForAnimationToEnd
+- assertVisible: "My Workspace"
+- assertNotVisible: "Sign Out"
+- takeScreenshot: "04b_after_back_from_profile"
+
+# ── 5. BACK FROM AI REPORTS ──────────────────────────────────────────────────
+# Navigate: Overview → "AI Performance Reports" card → AI Reports
+
+- tapOn: "AI Performance Reports"
+- waitForAnimationToEnd
+- assertVisible: "AI Performance Reports"
+- takeScreenshot: "05a_ai_reports_open"
+- pressKey: Back
+- waitForAnimationToEnd
+- assertVisible: "My Workspace"
+- takeScreenshot: "05b_after_back_from_ai_reports"
+
+# ── 6. BACK FROM ACTIONS → SUBMIT EVIDENCE ───────────────────────────────────
+# Navigate: Actions tab → first "Submit Evidence" button → Submit Evidence screen
+
+- tapOn: "Actions"
+- waitForAnimationToEnd
+- assertVisible: "Actions"
+# Scroll to find the first Submit Evidence / Resubmit Evidence button
+- scrollUntilVisible:
+    element:
+      text: "Submit Evidence"
+    direction: DOWN
+    timeout: 5000
+- tapOn: "Submit Evidence"
+- waitForAnimationToEnd
+- takeScreenshot: "06a_submit_evidence_open"
+# Submit Evidence screen heading expected to match
+- pressKey: Back
+- waitForAnimationToEnd
+# After back, expect to land back on Employee Dashboard (Overview tab)
+- assertVisible: "My Workspace"
+- takeScreenshot: "06b_after_back_from_submit_evidence"
+
+# ── 7. BACK FROM ROOT DASHBOARD (should NOT crash or show blank) ─────────────
+# At the root (stack.length = 1) the hardware back should background the app.
+# Standard Android UX — pressing back at any home screen closes/backgrounds the app.
+# We verify the app is NOT in a broken state by re-launching and checking session
+# and screen state are intact.
+
+- tapOn: "Overview"
+- waitForAnimationToEnd
+- assertVisible: "My Workspace"
+- takeScreenshot: "07a_root_dashboard_before_back"
+- pressKey: Back
+- waitForAnimationToEnd
+# App is now backgrounded (or closed by Android). Re-launch without clearState
+# to bring it to the foreground / restart with persisted session.
+- launchApp
+- extendedWaitUntil:
+    visible:
+      text: "My Workspace"
+    timeout: 20000
+- takeScreenshot: "07b_after_root_back_relaunch"
+# If the session persisted, the user is still on the Employee Dashboard.
+# If this assertion fails with a blank screen or login screen, session was lost.
+
+# ── 8. NO BLANK SCREEN DURING RAPID FORWARD+BACK ────────────────────────────
+# Quickly navigate into a screen and immediately press back.
+# Verifies no blank/white flash state is left during the transition animation.
+
+- tapOn: "My Goals"
+- pressKey: Back
+- waitForAnimationToEnd
+- assertVisible: "My Workspace"
+- assertNotVisible: "Q1"
+- takeScreenshot: "08_rapid_forward_back_no_blank"

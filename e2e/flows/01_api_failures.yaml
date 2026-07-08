@@ -1,0 +1,96 @@
+# api_failures.yaml — Offline / network-failure behavior
+#
+# WHAT THIS TESTS:
+#   App behavior when Supabase is unreachable (airplane mode / WiFi disabled).
+#   The app has no offline detection, no error banners, and no retry buttons,
+#   so this flow documents the CURRENT behavior (empty screens, no crash) and
+#   serves as a regression guard against crashes or hangs.
+#
+# HOW TO RUN:
+#   Use the companion script — do NOT run this flow directly with `maestro test`.
+#   The script handles network toggling via adb:
+#
+#     .\e2e\run-offline-test.ps1
+#
+# PRE-CONDITION (managed by the run script):
+#   1. App is already authenticated (login flow ran with network enabled)
+#   2. Network is disabled by the run script BEFORE this flow starts
+#   3. App is relaunched fresh so React Query has no in-memory cache
+#
+# DOCUMENTED GAPS — tests below confirm these app limitations:
+#   - No "You are offline" banner or indicator
+#   - Screens show empty lists instead of an error message when API calls fail
+#   - No retry button appears on any screen
+#   - Navigating back and forth does not trigger re-fetch (no pull-to-refresh)
+#   - App recovery requires network restore AND a manual navigate-away-and-back
+
+appId: com.growtracker.app
+---
+
+# Launch the app without clearing state so the auth token (stored in
+# SecureStore / AsyncStorage) survives. React Query's in-memory cache is
+# cleared because the JS engine restarted, so every query fires fresh —
+# and all fail because the network is disabled.
+- launchApp
+
+# Wait for the app shell to render. The login state is preserved, so we
+# should land on the Employee Dashboard rather than the role-selection screen.
+- extendedWaitUntil:
+    visible:
+      text: "Dashboard"
+    timeout: 20000
+
+# ── Goals screen ─────────────────────────────────────────────────────────────
+
+- tapOn: "My Goals"
+- waitForAnimationToEnd
+
+# GAP: The app shows an empty goals list with no error message.
+#      Expected (ideal): "Unable to load goals. Check your connection."
+- assertNotVisible: "Unable to load"
+- assertNotVisible: "Network error"
+- assertNotVisible: "No internet"
+
+# Verify the screen at least renders the shell (heading visible, no crash)
+- assertVisible: "My Goals"
+
+# GAP: No retry button
+- assertNotVisible: "Retry"
+
+# ── Back to Dashboard ─────────────────────────────────────────────────────────
+
+- tapOn: "‹ Back"
+- waitForAnimationToEnd
+- assertVisible: "Dashboard"
+
+# ── Notifications screen ──────────────────────────────────────────────────────
+
+- tapOn: "Notifications"
+- waitForAnimationToEnd
+
+# GAP: Empty list with no error message instead of an offline indicator
+- assertNotVisible: "Network error"
+- assertNotVisible: "No internet"
+- assertVisible: "Notifications"
+
+# ── Daily Log screen ──────────────────────────────────────────────────────────
+
+- tapOn: "Daily Work Log"
+- waitForAnimationToEnd
+
+# Daily Log is a write-first screen — its form renders even offline because
+# the form UI doesn't depend on a fetch. The save action will fail silently
+# when network is restored (useSaveDailyLog mutation enters isError state
+# but no error toast is wired).
+- assertVisible: "Daily Log"
+- assertVisible: "Tasks Completed"
+- assertVisible: "Save Daily Log"
+
+# Verify the input fields are rendered and the screen didn't crash
+- assertVisible: "Describe a task you completed..."
+
+# ── Recovery: network is re-enabled by the run script after this point ────────
+# The run script re-enables WiFi/data after the flow completes.
+# React Query does NOT auto-retry without NetInfo integration, so the user
+# would need to navigate away and back (or kill/relaunch the app) to see
+# data load again. This is the documented recovery gap.

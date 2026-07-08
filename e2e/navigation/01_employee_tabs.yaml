@@ -1,0 +1,23 @@
+appId: com.growtracker.app
+---
+- launchApp:
+    clearState: true
+
+- runFlow: "../helpers/login_employee.yaml"
+
+# ── Overview tab (default) ───────────────────────────────────────────────────
+- assertVisible: "Overview"
+- assertVisible: "Performance Score"
+- assertVisible: "My Workspace"
+
+# ── Analysis tab ────────────────────────────────────────────────────────────
+- tapOn: "Analysis"
+- assertVisible: "Analysis"
+
+# ── Actions tab ─────────────────────────────────────────────────────────────
+- tapOn: "Actions"
+- assertVisible: "Actions"
+
+# ── Back to Overview ────────────────────────────────────────────────────────
+- tapOn: "Overview"
+- assertVisible: "Performance Score"

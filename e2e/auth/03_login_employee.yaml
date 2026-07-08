@@ -1,0 +1,11 @@
+appId: com.growtracker.app
+---
+- launchApp:
+    clearState: true
+
+# Login as pre-seeded test employee
+- runFlow: "../helpers/login_employee.yaml"
+
+# Confirm we land on the Employee Dashboard
+- assertVisible: "Overview"
+- assertVisible: "Performance Score"

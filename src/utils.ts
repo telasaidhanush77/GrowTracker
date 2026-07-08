@@ -56,18 +56,32 @@ export const NOTIF_ICONS: Record<string, string> = {
   goal_adjusted: '✏️',
   fiscal_year_complete: '🏆',
   onboarding_complete: '👋',
+  employee_offboarded: '👤',
+  manager_changed: '🔀',
+  ai_overdue_alert: '⏰',
+  ai_deadline_warning: '⚠️',
+  ai_daily_log_reminder: '📝',
+  ai_streak_milestone: '🔥',
 };
 
-// Weighted performance score: 0-100
+// Performance score: Σ(weight × rating/5) / totalWeight × 100
 export function calcQuarterScore(goals: Goal[], quarter: Quarter): number {
   const qGoals = goals.filter(g => g.quarter === quarter);
   if (!qGoals.length) return 0;
-  const totalWeight = qGoals.reduce((s, g) => s + g.weight, 0);
-  if (!totalWeight) return 0;
+  const totalWeight = qGoals.reduce((s, g) => s + (g.weight ?? 0), 0);
+  if (totalWeight === 0) return 0;
   const earned = qGoals
     .filter(g => g.status === 'approved' && g.managerRating != null)
-    .reduce((s, g) => s + g.weight * (g.managerRating! / 5), 0);
+    .reduce((s, g) => s + (g.weight ?? 0) * (g.managerRating! / 5), 0);
   return Math.round((earned / totalWeight) * 100);
+}
+
+// Completion rate: approved goals as % of all goals in the quarter
+export function calcCompletionRate(goals: Goal[], quarter: Quarter): number {
+  const qGoals = goals.filter(g => g.quarter === quarter);
+  if (!qGoals.length) return 0;
+  const approved = qGoals.filter(g => g.status === 'approved').length;
+  return Math.round((approved / qGoals.length) * 100);
 }
 
 export function getGoalStats(goals: Goal[], quarter: Quarter) {

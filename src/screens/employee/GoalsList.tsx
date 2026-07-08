@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useCallback, useMemo, useState } from 'react';
+import { FlatList, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Header from '../../components/Header';
 import { useApp } from '../../context/AppContext';
 import { useTheme } from '../../context/ThemeContext';
 import { Radius, Shadow, Spacing } from '../../theme';
 import type { ColorPalette } from '../../theme';
+import type { Goal } from '../../types';
 import { GoalStatus, Quarter, ScreenProps } from '../../types';
 import {
   CATEGORY_CONFIG,
@@ -26,10 +27,10 @@ const FILTER_CHIPS: FilterChip[] = [
 ];
 
 export default function GoalsList({ navigation, params, currentUserId }: ScreenProps) {
-  const { goals, employees } = useApp();
+  const { goals, employees, updateGoal } = useApp();
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
-  const [activeQ, setActiveQ] = useState<Quarter>(params?.filterQuarter ?? 'Q2');
+  const [activeQ, setActiveQ] = useState<Quarter>(params?.filterQuarter ?? 'Q1');
   const [filterStatus, setFilterStatus] = useState<GoalStatus | undefined>(params?.filterStatus);
 
   const isReadOnly = !!params?.readOnly;
@@ -54,6 +55,105 @@ export default function GoalsList({ navigation, params, currentUserId }: ScreenP
   const headerTitle = viewingEmployee
     ? `${viewingEmployee.name.split(' ')[0]}'s Goals`
     : 'My Goals';
+
+  const renderGoalCard = useCallback(({ item: goal }: { item: Goal }) => {
+    const sc = STATUS_CONFIG[goal.status];
+    const pc = PRIORITY_CONFIG[goal.priority];
+    const cc = CATEGORY_CONFIG[goal.category];
+    const overdue =
+      goal.status !== 'approved' && goal.status !== 'submitted' && isOverdue(goal.targetDate);
+    const canSubmit = goal.status === 'in_progress' || goal.status === 'not_started';
+    const canResubmit = goal.status === 'rejected';
+
+    return (
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <View style={styles.badges}>
+            <View style={[styles.chip, { backgroundColor: cc.color + '40' }]}>
+              <Text style={[styles.chipText, { color: cc.color }]}>{cc.label}</Text>
+            </View>
+            <View style={[styles.chip, { backgroundColor: pc.bg }]}>
+              <Text style={[styles.chipText, { color: pc.color }]}>{pc.label}</Text>
+            </View>
+          </View>
+          <View style={[styles.statusChip, { backgroundColor: sc.bg }]}>
+            <Text style={[styles.statusChipText, { color: sc.color }]}>{sc.label}</Text>
+          </View>
+        </View>
+
+        <Text style={styles.goalTitle}>{goal.title}</Text>
+        <Text style={styles.goalDesc}>{goal.description}</Text>
+
+        <View style={styles.metaRow}>
+          <Text style={[styles.dueText, overdue && styles.overdueText]}>
+            {overdue ? '⚠ Overdue · ' : ''}Due {formatDate(goal.targetDate)}
+          </Text>
+        </View>
+
+        {goal.status === 'approved' && goal.managerRating && (
+          <View style={styles.ratingRow}>
+            <Text style={styles.ratingLabel}>Manager rating: </Text>
+            <View style={styles.stars}>
+              {[1, 2, 3, 4, 5].map(s => (
+                <Text key={s} style={[styles.star, s <= goal.managerRating! && styles.starFilled]}>
+                  ★
+                </Text>
+              ))}
+            </View>
+          </View>
+        )}
+
+        {goal.evidence?.managerFeedback && (
+          <View
+            style={[
+              styles.feedbackBox,
+              {
+                backgroundColor:
+                  goal.status === 'approved' ? colors.approvedBg : colors.rejectedBg,
+              },
+            ]}
+          >
+            <Text
+              style={[
+                styles.feedbackLabel,
+                { color: goal.status === 'approved' ? colors.approved : colors.rejected },
+              ]}
+            >
+              {goal.status === 'approved' ? '✓ Manager feedback:' : '✕ Rejection reason:'}
+            </Text>
+            <Text style={styles.feedbackText}>{goal.evidence.managerFeedback}</Text>
+          </View>
+        )}
+
+        {goal.status === 'submitted' && (
+          <View style={styles.submittedBox}>
+            <Text style={styles.submittedText}>
+              📎 Evidence submitted · Awaiting manager review
+            </Text>
+          </View>
+        )}
+
+        {!isReadOnly && goal.status === 'not_started' && (
+          <TouchableOpacity
+            style={styles.acknowledgeBtn}
+            onPress={() => updateGoal(goal.id, { status: 'in_progress' })}
+          >
+            <Text style={styles.submitBtnText}>✅ Acknowledge &amp; Start</Text>
+          </TouchableOpacity>
+        )}
+        {!isReadOnly && (canSubmit || canResubmit) && goal.status !== 'not_started' && (
+          <TouchableOpacity
+            style={[styles.submitBtn, canResubmit && styles.resubmitBtn]}
+            onPress={() => navigation.navigate('submit-evidence', { goalId: goal.id })}
+          >
+            <Text style={styles.submitBtnText}>
+              {canResubmit ? '🔁 Resubmit Evidence' : '📎 Submit Evidence'}
+            </Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    );
+  }, [styles, colors, isReadOnly, updateGoal, navigation]);
 
   return (
     <View style={styles.root}>
@@ -100,125 +200,23 @@ export default function GoalsList({ navigation, params, currentUserId }: ScreenP
         })}
       </ScrollView>
 
-      <ScrollView
+      <FlatList
+        data={myGoals}
+        keyExtractor={goal => goal.id}
+        renderItem={renderGoalCard}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
-      >
-        {myGoals.length === 0 && (
+        ListEmptyComponent={
           <View style={styles.emptyState}>
             <Text style={styles.emptyIcon}>🎯</Text>
             <Text style={styles.emptyText}>No {activeQ} goals have been set yet.</Text>
-            <Text style={styles.emptySub}>Your manager will assign goals soon.</Text>
+            <Text style={styles.emptySub}>
+              {isReadOnly ? 'No goals have been assigned yet.' : 'Your manager will assign goals soon.'}
+            </Text>
           </View>
-        )}
-
-        {myGoals.map(goal => {
-          const sc = STATUS_CONFIG[goal.status];
-          const pc = PRIORITY_CONFIG[goal.priority];
-          const cc = CATEGORY_CONFIG[goal.category];
-          const overdue =
-            goal.status !== 'approved' && goal.status !== 'submitted' && isOverdue(goal.targetDate);
-          const canSubmit = goal.status === 'in_progress' || goal.status === 'not_started';
-          const canResubmit = goal.status === 'rejected';
-
-          return (
-            <View key={goal.id} style={styles.card}>
-              {/* Header row */}
-              <View style={styles.cardHeader}>
-                <View style={styles.badges}>
-                  <View style={[styles.chip, { backgroundColor: cc.color + '40' }]}>
-                    <Text style={[styles.chipText, { color: cc.color }]}>{cc.label}</Text>
-                  </View>
-                  <View style={[styles.chip, { backgroundColor: pc.bg }]}>
-                    <Text style={[styles.chipText, { color: pc.color }]}>{pc.label}</Text>
-                  </View>
-                </View>
-                <View style={[styles.statusChip, { backgroundColor: sc.bg }]}>
-                  <Text style={[styles.statusChipText, { color: sc.color }]}>{sc.label}</Text>
-                </View>
-              </View>
-
-              <Text style={styles.goalTitle}>{goal.title}</Text>
-              <Text style={styles.goalDesc}>{goal.description}</Text>
-
-              <View style={styles.metaRow}>
-                <Text style={[styles.dueText, overdue && styles.overdueText]}>
-                  {overdue ? '⚠ Overdue · ' : ''}Due {formatDate(goal.targetDate)}
-                </Text>
-                <Text style={styles.weightText}>{goal.weight} cr</Text>
-              </View>
-
-              {/* Manager rating */}
-              {goal.status === 'approved' && goal.managerRating && (
-                <View style={styles.ratingRow}>
-                  <Text style={styles.ratingLabel}>Manager rating: </Text>
-                  <View style={styles.stars}>
-                    {[1, 2, 3, 4, 5].map(s => (
-                      <Text
-                        key={s}
-                        style={[styles.star, s <= goal.managerRating! && styles.starFilled]}
-                      >
-                        ★
-                      </Text>
-                    ))}
-                  </View>
-                </View>
-              )}
-
-              {/* Manager feedback */}
-              {goal.evidence?.managerFeedback && (
-                <View
-                  style={[
-                    styles.feedbackBox,
-                    {
-                      backgroundColor:
-                        goal.status === 'approved' ? colors.approvedBg : colors.rejectedBg,
-                    },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.feedbackLabel,
-                      { color: goal.status === 'approved' ? colors.approved : colors.rejected },
-                    ]}
-                  >
-                    {goal.status === 'approved' ? '✓ Manager feedback:' : '✕ Rejection reason:'}
-                  </Text>
-                  <Text style={styles.feedbackText}>{goal.evidence.managerFeedback}</Text>
-                </View>
-              )}
-
-              {/* Evidence submitted indicator */}
-              {goal.status === 'submitted' && (
-                <View style={styles.submittedBox}>
-                  <Text style={styles.submittedText}>
-                    📎 Evidence submitted · Awaiting manager review
-                  </Text>
-                </View>
-              )}
-
-              {/* Actions */}
-              {!isReadOnly && (canSubmit || canResubmit) && (
-                <TouchableOpacity
-                  style={[
-                    styles.submitBtn,
-                    canResubmit && styles.resubmitBtn,
-                  ]}
-                  onPress={() =>
-                    navigation.navigate('submit-evidence', { goalId: goal.id })
-                  }
-                >
-                  <Text style={styles.submitBtnText}>
-                    {canResubmit ? '🔁 Resubmit Evidence' : '📎 Submit Evidence'}
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          );
-        })}
-
-        <View style={{ height: 32 }} />
-      </ScrollView>
+        }
+        ListFooterComponent={<View style={{ height: 32 }} />}
+      />
     </View>
   );
 }
@@ -291,7 +289,6 @@ function createStyles(C: ColorPalette) {
     metaRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
     dueText: { fontSize: 11, color: C.textMuted },
     overdueText: { color: C.rejected, fontWeight: '700' },
-    weightText: { fontSize: 11, color: C.textMuted },
 
     ratingRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
     ratingLabel: { fontSize: 12, color: C.textMuted },
@@ -312,6 +309,13 @@ function createStyles(C: ColorPalette) {
     submittedText: { fontSize: 12, color: C.pending, fontWeight: '600' },
     submittedSub: { fontSize: 11, color: C.textMuted, marginTop: 3 },
 
+    acknowledgeBtn: {
+      backgroundColor: C.employeePrimary,
+      borderRadius: Radius.lg,
+      paddingVertical: 10,
+      alignItems: 'center',
+      marginBottom: 6,
+    },
     submitBtn: {
       backgroundColor: C.primary,
       borderRadius: Radius.lg,

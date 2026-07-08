@@ -1,25 +1,24 @@
 import React, { useState, useMemo } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, DimensionValue, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import MiniBarChart, { BarDatum } from '../../components/charts/MiniBarChart';
 import BottomTabBar, { TabDef } from '../../components/BottomTabBar';
 import Header from '../../components/Header';
 import { useApp } from '../../context/AppContext';
 import { useTheme } from '../../context/ThemeContext';
+import { useToast } from '../../context/ToastContext';
+import { useTriggerCoaching } from '../../hooks/useAIReports';
 import { Radius, Shadow, Spacing, Typography } from '../../theme';
 import type { ColorPalette } from '../../theme';
-import { Quarter, ScreenProps } from '../../types';
+import { ScreenProps } from '../../types';
 import { calcQuarterScore, getGoalStats } from '../../utils';
 
-const TABS = ['Dashboard', 'Analytics', 'Team'] as const;
-type Tab = typeof TABS[number];
+type Tab = 'Dashboard' | 'Analytics' | 'Team';
 
 const MGR_TABS: TabDef[] = [
   { key: 'Dashboard', label: 'Dashboard', icon: '⌂' },
   { key: 'Team',      label: 'Team',      icon: '◈' },
   { key: 'Analytics', label: 'Analytics', icon: '▲' },
 ];
-
-const QUARTERS: Quarter[] = ['Q1', 'Q2'];
 
 export default function ManagerDashboard({
   navigation,
@@ -30,45 +29,67 @@ export default function ManagerDashboard({
   const { employees, goals, notifications } = useApp();
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const { showToast } = useToast();
+  const coachingMutation = useTriggerCoaching();
   const [activeTab, setActiveTab] = useState<Tab>('Dashboard');
 
-  const manager = employees.find(e => e.id === currentUserId);
-  const team = employees.filter(e => e.managerId === currentUserId && e.role === 'employee');
-  const teamGoals = goals.filter(g => team.some(e => e.id === g.employeeId));
+  // Heavy per-team analytics (O(team × goals)). Memoized on the underlying data
+  // so tab switches and other unrelated re-renders don't recompute it.
+  const {
+    manager, team, pendingReviews, overdueTeamGoals, overdueEmployees,
+    q1Stats, q2Stats, totalGoals, approvedAll, userInitials, teamData,
+  } = useMemo(() => {
+    const manager = employees.find(e => e.id === currentUserId);
+    const team = employees.filter(e => e.managerId === currentUserId && e.role === 'employee');
+    const teamGoals = goals.filter(g => team.some(e => e.id === g.employeeId));
 
-  const pendingReviews = teamGoals.filter(g => g.status === 'submitted').length;
-  const notifCount = notifications.filter(n => n.recipientId === currentUserId && !n.read).length;
+    const pendingReviews = teamGoals.filter(g => g.status === 'submitted').length;
 
-  const q1Stats = getGoalStats(teamGoals, 'Q1');
-  const q2Stats = getGoalStats(teamGoals, 'Q2');
+    const todayMs = (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); })();
+    const overdueTeamGoals = teamGoals.filter(g =>
+      (g.status === 'not_started' || g.status === 'in_progress') &&
+      new Date(g.targetDate + 'T00:00:00').getTime() < todayMs
+    );
+    const overdueEmployees = team.filter(emp => overdueTeamGoals.some(g => g.employeeId === emp.id));
 
-  const totalGoals = teamGoals.length;
-  const approvedAll = q1Stats.approved + q2Stats.approved;
+    const q1Stats = getGoalStats(teamGoals, 'Q1');
+    const q2Stats = getGoalStats(teamGoals, 'Q2');
 
-  const userInitials = manager?.avatarInitials ?? '';
+    const teamData = team.map(emp => {
+      const empGoals = goals.filter(g => g.employeeId === emp.id);
+      const q1Score = calcQuarterScore(empGoals, 'Q1');
+      const q2Score = calcQuarterScore(empGoals, 'Q2');
+      const combined = Math.round((q1Score + q2Score) / (q1Score > 0 && q2Score > 0 ? 2 : 1)) || 0;
+      const empStats = getGoalStats(empGoals, 'Q2');
+      return { emp, q1Score, q2Score, combined, empStats, empGoals };
+    });
 
-  const teamData = team.map(emp => {
-    const empGoals = goals.filter(g => g.employeeId === emp.id);
-    const q1Score = calcQuarterScore(empGoals, 'Q1');
-    const q2Score = calcQuarterScore(empGoals, 'Q2');
-    const combined = Math.round((q1Score + q2Score) / (q1Score > 0 && q2Score > 0 ? 2 : 1)) || 0;
-    const empStats = getGoalStats(empGoals, 'Q2');
-    return { emp, q1Score, q2Score, combined, empStats, empGoals };
-  });
+    return {
+      manager, team, pendingReviews, overdueTeamGoals, overdueEmployees,
+      q1Stats, q2Stats, totalGoals: teamGoals.length,
+      approvedAll: q1Stats.approved + q2Stats.approved,
+      userInitials: manager?.avatarInitials ?? '', teamData,
+    };
+  }, [employees, goals, currentUserId]);
 
-  const teamBarData: BarDatum[] = teamData.map(d => ({
+  const notifCount = useMemo(
+    () => notifications.filter(n => n.recipientId === currentUserId && !n.read).length,
+    [notifications, currentUserId],
+  );
+
+  const teamBarData: BarDatum[] = useMemo(() => teamData.map(d => ({
     label: d.emp.name.split(' ')[0],
     value: d.q2Score,
     color: d.q2Score >= 75 ? colors.approved : d.q2Score >= 50 ? colors.pending : colors.rejected,
-  }));
+  })), [teamData, colors]);
 
-  const statusDist: BarDatum[] = [
+  const statusDist: BarDatum[] = useMemo(() => [
     { label: 'Approved', value: q1Stats.approved + q2Stats.approved, color: colors.approved },
     { label: 'In Progress', value: q1Stats.inProgress + q2Stats.inProgress, color: colors.inProgress },
     { label: 'Pending', value: q1Stats.submitted + q2Stats.submitted, color: colors.pending },
     { label: 'Rejected', value: q1Stats.rejected + q2Stats.rejected, color: colors.rejected },
     { label: 'Not Started', value: q1Stats.notStarted + q2Stats.notStarted, color: colors.notStarted },
-  ];
+  ], [q1Stats, q2Stats, colors]);
 
   return (
     <View style={styles.root}>
@@ -81,6 +102,7 @@ export default function ManagerDashboard({
         onSwitchAccount={onSwitchAccount}
         onNotif={() => navigation.navigate('notifications')}
         onProfile={() => navigation.navigate('profile')}
+        onPrivacySecurity={() => navigation.navigate('privacy-security')}
         notifCount={notifCount}
         userInitials={userInitials}
       />
@@ -123,6 +145,26 @@ export default function ManagerDashboard({
               </TouchableOpacity>
             )}
 
+            {overdueEmployees.length > 0 && (
+              <View style={styles.overdueCard}>
+                <Text style={styles.overdueCardIcon}>⚠</Text>
+                <View style={styles.overdueCardBody}>
+                  <Text style={styles.overdueCardTitle}>
+                    {overdueEmployees.length} team member{overdueEmployees.length !== 1 ? 's' : ''} with overdue goals
+                  </Text>
+                  <Text style={styles.overdueCardSub}>
+                    {overdueEmployees.map(e => e.name.split(' ')[0]).join(', ')} — goal{overdueTeamGoals.length !== 1 ? 's' : ''} past target date
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => navigation.navigate('team-overview')}
+                  style={styles.overdueViewBtn}
+                >
+                  <Text style={styles.overdueViewBtnText}>View</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Team Performance</Text>
               <Text style={styles.sectionPill}>Q1 vs Q2</Text>
@@ -135,13 +177,13 @@ export default function ManagerDashboard({
                   <View style={styles.teamPerfBars}>
                     <View style={styles.teamPerfBarWrap}>
                       <View style={[styles.teamPerfBar, {
-                        width: `${Math.min(q1Score, 100)}%` as any,
+                        width: `${Math.min(q1Score, 100)}%` as DimensionValue,
                         backgroundColor: colors.textSecondary,
                       }]} />
                     </View>
                     <View style={styles.teamPerfBarWrap}>
                       <View style={[styles.teamPerfBar, {
-                        width: `${Math.min(q2Score, 100)}%` as any,
+                        width: `${Math.min(q2Score, 100)}%` as DimensionValue,
                         backgroundColor: q2Score >= 75 ? colors.approved : q2Score >= 50 ? colors.pending : q2Score > 0 ? colors.rejected : colors.chartTrack,
                       }]} />
                     </View>
@@ -203,6 +245,35 @@ export default function ManagerDashboard({
                 <Text style={styles.teamActivitySub}>View your team's daily work logs</Text>
               </View>
               <Text style={[styles.teamActivityArrow, { color: colors.managerPrimary }]}>›</Text>
+            </TouchableOpacity>
+
+            {/* AI Smart Coaching */}
+            <TouchableOpacity
+              style={[styles.coachingCard, coachingMutation.isPending && styles.coachingCardDisabled]}
+              onPress={async () => {
+                try {
+                  const result = await coachingMutation.mutateAsync({});
+                  showToast(`Sent ${result.sent} coaching message${result.sent !== 1 ? 's' : ''}`, 'success');
+                } catch (err: unknown) {
+                  showToast(err instanceof Error ? err.message : 'Coaching failed', 'error');
+                }
+              }}
+              disabled={coachingMutation.isPending}
+              activeOpacity={0.82}
+            >
+              <View style={styles.coachingLeft}>
+                <Text style={styles.coachingIcon}>✦</Text>
+                <View style={styles.coachingBody}>
+                  <Text style={styles.coachingTitle}>Send Smart Coaching</Text>
+                  <Text style={styles.coachingSub}>
+                    Claude analyzes your team's streaks and deadlines to send personalized nudges
+                  </Text>
+                </View>
+              </View>
+              {coachingMutation.isPending
+                ? <ActivityIndicator color={colors.managerPrimary} size="small" />
+                : <Text style={styles.coachingArrow}>›</Text>
+              }
             </TouchableOpacity>
 
             <View style={[styles.sectionHeader, { marginTop: Spacing.lg }]}>
@@ -380,7 +451,7 @@ export default function ManagerDashboard({
                     <View style={[styles.statusDot, { backgroundColor: item.color }]} />
                     <Text style={styles.statusRowLabel}>{item.label}</Text>
                     <View style={styles.statusBarTrack}>
-                      <View style={[styles.statusBarFill, { width: `${pct}%` as any, backgroundColor: item.color }]} />
+                      <View style={[styles.statusBarFill, { width: `${pct}%` as DimensionValue, backgroundColor: item.color }]} />
                     </View>
                     <Text style={[styles.statusRowCount, { color: item.color }]}>{item.value}</Text>
                     <Text style={styles.statusRowPct}>{pct}%</Text>
@@ -442,7 +513,7 @@ export default function ManagerDashboard({
               <Text style={styles.sectionPill}>{team.length} total</Text>
             </View>
 
-            {teamData.map(({ emp, q1Score, q2Score, empStats, empGoals }) => (
+            {teamData.map(({ emp, q1Score, q2Score, empStats }) => (
               <View key={emp.id} style={styles.fullTeamCard}>
                 <View style={styles.fullTeamHeader}>
                   <View style={[styles.teamAvatar, { backgroundColor: colors.employeeLight, width: 48, height: 48 }]}>
@@ -510,34 +581,6 @@ export default function ManagerDashboard({
   );
 }
 
-function SegmentBar({ stats }: { stats: ReturnType<typeof getGoalStats> }) {
-  const { colors } = useTheme();
-  if (!stats.total) {
-    return (
-      <View style={{ height: 8, borderRadius: 4, flexDirection: 'row', overflow: 'hidden', backgroundColor: colors.chartTrack, marginVertical: 4 }}>
-        <Text style={{ fontSize: 9, color: colors.textMuted, paddingLeft: 4 }}>No goals</Text>
-      </View>
-    );
-  }
-  const t = stats.total;
-  const segments = [
-    { pct: (stats.approved / t) * 100, color: colors.approved },
-    { pct: (stats.submitted / t) * 100, color: colors.pending },
-    { pct: (stats.inProgress / t) * 100, color: colors.inProgress },
-    { pct: (stats.rejected / t) * 100, color: colors.rejected },
-    { pct: (stats.notStarted / t) * 100, color: colors.notStarted },
-  ];
-  return (
-    <View style={{ height: 8, borderRadius: 4, flexDirection: 'row', overflow: 'hidden', backgroundColor: colors.chartTrack, marginVertical: 4 }}>
-      {segments.map((s, i) =>
-        s.pct > 0 ? (
-          <View key={i} style={{ width: `${s.pct}%` as any, height: '100%', backgroundColor: s.color }} />
-        ) : null,
-      )}
-    </View>
-  );
-}
-
 function ScoreChip({ label, value }: { label: string; value: number }) {
   const { colors } = useTheme();
   const color = value >= 75 ? colors.approved : value >= 50 ? colors.pending : value > 0 ? colors.rejected : colors.notStarted;
@@ -555,7 +598,7 @@ function AnalyticsBar({ label, value, color }: { label: string; value: number; c
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 }}>
       <Text style={{ width: 60, fontSize: 11, color: colors.textMuted, fontWeight: '600' }}>{label}</Text>
       <View style={{ flex: 1, height: 6, backgroundColor: colors.chartTrack, borderRadius: 3, overflow: 'hidden' }}>
-        <View style={{ height: '100%', borderRadius: 3, width: `${Math.min(value, 100)}%` as any, backgroundColor: color }} />
+        <View style={{ height: '100%', borderRadius: 3, width: `${Math.min(value, 100)}%` as DimensionValue, backgroundColor: color }} />
       </View>
       <Text style={{ width: 38, fontSize: 11, fontWeight: '700', textAlign: 'right', color }}>{value > 0 ? `${value}%` : '—'}</Text>
     </View>
@@ -734,6 +777,26 @@ function createStyles(C: ColorPalette) {
     teamActivitySub: { fontSize: 12, color: C.textMuted },
     teamActivityArrow: { fontSize: 22, fontWeight: '700', lineHeight: 28 },
 
+    coachingCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: C.card,
+      borderRadius: Radius.lg,
+      padding: Spacing.md,
+      marginTop: 10,
+      gap: Spacing.md,
+      borderWidth: 1,
+      borderColor: C.managerPrimary + '40',
+      ...Shadow.sm,
+    },
+    coachingCardDisabled: { opacity: 0.6 },
+    coachingLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
+    coachingIcon: { fontSize: 22, color: C.managerPrimary },
+    coachingBody: { flex: 1 },
+    coachingTitle: { fontSize: 14, fontWeight: '700', color: C.textPrimary, marginBottom: 3 },
+    coachingSub: { fontSize: 12, color: C.textMuted, lineHeight: 17 },
+    coachingArrow: { fontSize: 22, color: C.managerPrimary, fontWeight: '700' },
+
     statusRow: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -880,5 +943,31 @@ function createStyles(C: ColorPalette) {
     fyCompScoreLabel: { fontSize: 9, color: C.textMuted, fontWeight: '600' },
     fyCompScore: { fontSize: 13, fontWeight: '800' },
     fyCompArrow: { fontSize: 18, color: C.textMuted },
+
+    overdueCard: {
+      backgroundColor: C.rejectedBg,
+      borderRadius: Radius.lg,
+      padding: Spacing.md,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      marginBottom: Spacing.lg,
+      borderLeftWidth: 3,
+      borderLeftColor: C.rejected,
+      borderWidth: 1,
+      borderColor: C.rejectedBg,
+      ...Shadow.sm,
+    },
+    overdueCardIcon: { fontSize: 20 },
+    overdueCardBody: { flex: 1 },
+    overdueCardTitle: { fontSize: 14, fontWeight: '700', color: C.rejected },
+    overdueCardSub: { fontSize: 12, color: C.textSecondary, marginTop: 2 },
+    overdueViewBtn: {
+      backgroundColor: C.rejected,
+      borderRadius: Radius.md,
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+    },
+    overdueViewBtnText: { fontSize: 12, fontWeight: '700', color: '#fff' },
   });
 }

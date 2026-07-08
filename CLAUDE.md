@@ -5,144 +5,120 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-npm start                    # Start Expo dev server (scan QR with Expo Go)
-npx expo start --tunnel      # Start with tunnel (phone on a different network)
-npm run android              # Target Android emulator
-npm run web                  # Target browser
+npm start                        # Start Expo dev server
+npx expo start --tunnel          # Start with tunnel (different network)
+npm run android / ios / web      # Target specific platform
+
+npm test                         # Run all Jest tests (892 tests, 58 suites)
+npm run test:watch               # Watch mode
+npm run test:coverage            # Coverage report
+npx jest src/__tests__/hooks/useGoals.test.ts   # Run a single test file
+npx jest --testNamePattern "inserts and prepends"  # Run by test name
+
+npm run lint                     # ESLint (src/ + App.tsx)
+npm run lint:fix                 # ESLint with auto-fix
+npm run typecheck                # tsc --noEmit
+
+npm run db:types                 # Regenerate src/db/types.ts from Supabase schema
+npm run db:push                  # Push migrations to Supabase
+npm run db:reset                 # Reset local Supabase DB
 ```
 
-No test runner or linter is configured.
-
-> **Before writing any Expo or React Native API calls**, check the versioned docs at https://docs.expo.dev/versions/v54.0.0/
+**Environment:** Copy `.env.example` to `.env` and set `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY`. The app throws on startup if either is missing.
 
 ## Stack
 
 - **Expo SDK 54** (managed workflow — no native `android/` or `ios/` folders)
 - **React Native 0.81.5**, **React 19.1**, **TypeScript** (strict)
-- Entry: `index.ts` → `App.tsx`
-- Persistence: `@react-native-async-storage/async-storage`
-- Crypto: `expo-crypto` (SHA-256 password hashing, OTP generation)
+- **Supabase JS v2** — auth + database backend (`src/lib/supabase.ts`)
+- **TanStack Query v5** — server-state caching and mutations (`src/lib/queryClient.ts`)
+- **Jest + jest-expo** — test runner; mocks in `__mocks__/`
 
 ## App Purpose
 
-**GrowTracker** is an employee performance tracking app. Three roles:
+**GrowTracker** — employee performance tracking with three roles:
 
 | Role | Responsibilities |
 |---|---|
-| **Employee** | View assigned goals, submit progress updates with evidence, write daily logs |
-| **Reporting Manager** | Set goals, approve/reject evidence, view team dashboards and daily logs |
+| **Employee** | View assigned goals, submit evidence, write daily logs |
+| **Reporting Manager** | Set goals, approve/reject evidence, view team dashboards |
 | **Admin** | Onboard employees, assign reporting managers |
 
-Core workflow: `New hire → Manager assigned → Manager sets goals (per quarter) → Employee updates + submits evidence → Manager approves/rejects → Fiscal year report`
+Core flow: `New hire → Manager assigns goals (per quarter) → Employee submits evidence → Manager approves/rejects → Fiscal year report`
 
 ## Architecture
 
-### Provider tree (App.tsx)
+### Provider tree (`App.tsx`)
 
 ```
 ErrorBoundary
-  ThemeProvider          — dark/light mode, colors exposed via useTheme()
-    AuthProvider         — login/logout/signup, persisted session, useAuth()
-      AppProvider        — goals, notifications, daily logs state, useApp()
-        ToastProvider    — in-app toast messages, useToast()
+  ThemeProvider          — dark/light mode, useTheme()
+    AuthProvider         — session + user list, useAuth()       [AuthContext.tsx]
+      AppProvider        — goals/notifs/logs mutations, useApp() [AppContext.tsx]
+        ToastProvider    — in-app toasts, useToast()
           AppRoot
 ```
 
-`AppRoot` gates on `isLoading` / `currentUser`. If no user → `AuthFlow` state machine. If authenticated → `ThemedRoot` (screen switcher).
+`AppRoot` gates on `isLoading` / `currentUser`. No user → `AuthFlow` state machine (splash → login → signup → forgot-*). Authenticated → `ThemedRoot` (screen switcher).
 
-### Navigation pattern
+### Data layer
 
-`App.tsx` holds a `StackEntry[]` in `useState`. `navigate(screen, params)` pushes; `goBack()` pops. No external nav library. Every screen receives `ScreenProps` (`navigation`, `params`, `currentUserId`, `currentRole`, `onLogout`). All screen names are typed as the `Screen` union in `src/types/index.ts`.
+All server data flows through TanStack Query hooks in `src/hooks/`:
+
+| Hook | Purpose |
+|---|---|
+| `useGoals` / `useAddGoal` / `useUpdateGoal` / `useDeleteGoal` | Goal CRUD with cache patching |
+| `useSubmitEvidence` / `useReviewEvidence` | Evidence upsert (atomic: evidence + goal status; rolls back evidence if goal update fails) |
+| `useNotifications` / `useMarkNotifRead` / `useMarkAllRead` | Notification feed with optimistic reads |
+| `useDailyLogs` / `useSaveDailyLog` | Daily log CRUD |
+| `useProfiles` | Employee profile list |
+| `useAIReports` | AI-generated performance reports |
+
+`AppContext` wraps these hooks and exposes a stable imperative API to screens so screens don't interact with React Query directly. Optimistic updates (goal add, notification read) are applied immediately in `AppContext`; mutations run in the background with toast errors on failure.
+
+**Supabase join shape:** `supabase.from('goals').select('*, evidence(*)')` returns `evidence` as an array (even for 1:1). `dbRowToGoal()` in `useGoals.ts` takes `evArr[0] ?? null` — don't read it as a scalar.
+
+**Query cache persistence:** `asyncStoragePersister` in `queryClient.ts` persists the TanStack Query cache to AsyncStorage under `@gt:query-cache`. Cache survives app restarts for 24 h; stale after 2 min (background refetch).
 
 ### Auth flow
 
-`AuthFlow` is a local state machine in `App.tsx` cycling through views: `splash → login → signup → signup-success → forgot-username / forgot-password`. Login/signup persist to `AsyncStorage` via stores in `src/auth/storage.ts`. Passwords are `salt:SHA256(salt+password)` using `expo-crypto`.
+- Session persisted via Supabase's `AsyncStorage` adapter; `AuthProvider` loads profile on mount via `getSession()`.
+- `onAuthStateChange` skips the `INITIAL_SESSION` event (already handled by `getSession()`) to prevent double `loadProfile`.
+- Role is never read from auth metadata (privilege escalation fix). The `handle_new_user` DB trigger always creates `'employee'`; admins update the role via `profiles.update()`.
+- Password reset is OTP-based: `resetPasswordRequest` → `resetPasswordCheckOtp` → `resetPasswordSetNewPassword`.
 
-### State management
+### Navigation pattern
 
-- **AuthContext** — `StoredUser[]`, current session, login/logout/signup, OTP-based password reset, admin `createUser`/`updateUser`/`removeUser`
-- **AppContext** — `Goal[]`, `Notification[]`, `DailyLog[]` + mutation functions, seeded from `src/data/mockData.ts` if AsyncStorage is empty
-- **ThemeContext** — `isDark`, `colors`, `toggleTheme`
-- **ToastContext** — `showToast(message, type)`
+Custom stack in `App.tsx`: `StackEntry[]` state, `navigate(screen, params)` pushes, `goBack()` pops. No external nav library. Every screen receives `ScreenProps` (`navigation`, `params`, `currentUserId`, `currentRole`, `onLogout`). All screen names are typed as the `Screen` union in `src/types/index.ts`.
 
 ### Key types (`src/types/index.ts`)
 
-- `StoredUser` — extends `Employee` with `firstName`, `lastName`, `username`, `passwordHash`, `mobile`
-- `Goal` — per-employee, per-quarter; has `weight`, `status`, optional `evidence: Evidence`, optional `attachments`
-- `Evidence` — inside a goal; has `selfRating`, `managerFeedback`, `status`
+- `StoredUser` — maps to the `profiles` DB table; includes `role`, `status`, `managerId`
+- `Goal` — per-employee per-quarter; has `weight`, `status`, optional `evidence: Evidence`
+- `Evidence` — nested inside `Goal`; has `selfRating`, `managerFeedback`, `status`, optional `attachments`
 - `DailyLog` — employee daily progress entries
-- `AuthSession`, `SignupData`, `ScreenProps`, `NavParams`, `Screen` (union of all screen names)
 
-### Data persistence (`src/auth/storage.ts`)
+DB types are auto-generated (`npm run db:types`) into `src/db/types.ts` — don't hand-edit.
 
-All stores wrap AsyncStorage with typed `get<T>(key, fallback)` / `set(key, value)` helpers:
+### Performance score formula
 
-| Store | Key | What it holds |
-|---|---|---|
-| `userStore` | `@gt:users` | `StoredUser[]` |
-| `sessionStore` | `@gt:session` | `AuthSession \| null` |
-| `goalStore` | `@gt:goals` | `Goal[]` |
-| `notifStore` | `@gt:notifications` | `Notification[]` |
-| `logStore` | `@gt:dailylogs` | `DailyLog[]` |
-| `otpStore` | `@gt:otps` | `OTPRecord[]` (6-digit OTP, 10 min TTL) |
-| `counterStore` | `@gt:counters` | `RoleCounters` (auto-increment IDs) |
+`Σ(goal.weight × managerRating/5) / totalWeight` — implemented in `src/utils.ts` as `calcQuarterScore`. The FY score averages Q1 and Q2, but divides by 1 (not 2) if only one quarter has data.
 
-### Screen map
+## Test structure
 
 ```
-src/screens/
-  auth/
-    SplashScreen.tsx        — role selector (first screen)
-    LoginScreen.tsx
-    SignUpScreen.tsx
-    SignUpSuccessScreen.tsx  — shows generated uniqueId + username after signup
-    ForgotPasswordScreen.tsx — OTP-based reset
-    ForgotUsernameScreen.tsx
-  admin/
-    AdminDashboard.tsx
-    OnboardEmployee.tsx
-  manager/
-    ManagerDashboard.tsx    — team stats, quarter progress bars, pending reviews CTA
-    TeamOverview.tsx        — per-employee progress bars + score chips
-    SetGoals.tsx            — goal CRUD per employee per quarter (weight budget ≤ 100)
-    ReviewEvidence.tsx      — approve/reject submissions, star rating, feedback
-    TeamDailyLogs.tsx       — manager view of employee daily logs
-  employee/
-    EmployeeDashboard.tsx   — personal performance cards, overdue alerts, carry-over nudge
-    GoalsList.tsx           — tabbed Q1/Q2, submit/resubmit actions
-    SubmitEvidence.tsx      — evidence form (description + links + self-rating)
-    DailyLogScreen.tsx      — write daily progress logs
-    MyProgressScreen.tsx    — employee's own progress view
-  shared/
-    NotificationsScreen.tsx — per-user feed with mark-read
-    ProfileScreen.tsx       — user profile
-    FYReportScreen.tsx      — fiscal year report
+src/__tests__/
+  hooks/          — useGoals, useNotifications, useDailyLogs, etc.
+  screens/        — per-screen render + interaction tests
+  context/        — ThemeContext, ToastContext
+  auth/           — storage helpers
+  security/       — auth gates, token storage, logging audit
+  network/        — loading states, API error UI behavior
+  accessibility/  — a11y audits on key screens
+  forms/          — validation edge cases
+  performance/    — render benchmarks
 ```
 
-### Components (`src/components/`)
+Tests mock `../../lib/supabase` and `../../context/*` with `jest.mock()`. The Supabase chain builder pattern (in hook tests) builds a mock that is awaitable both directly and via `.single()` — see `useGoals.test.ts` for the reference implementation.
 
-- `Header.tsx` — shared header with back/notifications badge/logout
-- `BottomTabBar.tsx` — bottom tab navigation bar
-- `AnimatedButton.tsx` — animated pressable button
-- `charts/GoalStatusBar.tsx` — stacked status segment bar
-- `charts/MiniBarChart.tsx` — compact bar chart
-- `charts/ProgressRing.tsx` — circular progress ring
-
-### Theme and utilities
-
-- `src/theme.ts` — `Colors`, `Spacing`, `Radius`, `Shadow` constants
-- `src/utils.ts` — `formatDate`, `timeAgo`, `calcQuarterScore`, `STATUS_CONFIG`; performance score = `Σ(weight × managerRating/5) / totalWeight`
-
-### Key features (beyond core PRD)
-
-- Weighted performance score (0–100) per quarter
-- Self-assessment rating (1–5 ★) on evidence
-- Goal weight budget per quarter (must sum ≤ 100), enforced in SetGoals
-- Overdue indicator on goals past target date
-- Q1 carry-over nudge on employee dashboard for rejected Q1 goals
-- Notification bell with badge in every dashboard header
-- Stacked quarter progress bars (approved/pending/in-progress/rejected segments)
-- Resubmit flow for rejected evidence
-- Dark/light theme toggle
-- Daily log entries per employee
-- OTP-based forgot-password flow (simulated — OTP printed to console, not emailed)
+`jest.setup.ts` configures TanStack Query's `notifyManager` and `timeoutManager` to use synchronous scheduling so tests don't leak open handles.

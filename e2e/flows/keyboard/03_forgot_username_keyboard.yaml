@@ -1,0 +1,83 @@
+# 03_forgot_username_keyboard.yaml — Forgot Username form keyboard behavior
+#
+# WHAT THIS TESTS:
+#   1. The email input is not covered by the keyboard — screenshot on focus.
+#   2. Enter key should submit the form ("Done" behavior) —
+#      DOCUMENTED GAP: no returnKeyType="done" / onSubmitEditing set.
+#   3. Tapping outside the email field dismisses the keyboard.
+#   4. The "‹ Back" button does NOT dismiss the keyboard first
+#      (keyboardShouldPersistTaps="handled" means touchables run without
+#      dismissing — the user is taken back before the keyboard slides down).
+#
+# SCREENSHOTS: Saved to the Maestro output directory.
+#
+# This form has a single email input, so keyboard overlap is very unlikely,
+# but screenshots confirm the "Recover Username" button remains visible above
+# the keyboard (it is the primary CTA and must be reachable without scrolling).
+
+appId: com.growtracker.app
+---
+
+# ── Navigate: Splash → Employee → Login → Forgot Username ────────────────────
+
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible:
+      text: "Employee"
+    timeout: 30000
+- tapOn: "Employee"
+- assertVisible: "Employee Portal"
+- tapOn:
+    text: "Forgot username? →"
+- assertVisible: "Recover Username"
+- assertVisible: "your@email.com"
+
+# ── FIELD: Email Address ──────────────────────────────────────────────────────
+
+- tapOn:
+    text: "your@email.com"
+- waitForAnimationToEnd
+- takeScreenshot: "01_forgot_username_email_focused"
+# Expected: email input visible above the keyboard.
+# CRITICAL: The "Recover Username" submit button must ALSO be visible above the
+# keyboard without scrolling. This is the single CTA and must be reachable.
+# If the button disappears behind the keyboard, the screen needs a ScrollView
+# or KeyboardAvoidingView behavior="height" on Android.
+
+- inputText: "alice.smith@example.com"
+- takeScreenshot: "02_forgot_username_email_typed"
+
+# ── DONE KEY TEST ─────────────────────────────────────────────────────────────
+# GAP: returnKeyType="done" is not set. Pressing Enter on the email field
+# should call handleRecover(). It doesn't.
+- pressKey: Enter
+- waitForAnimationToEnd
+- takeScreenshot: "03_forgot_username_done_key_result"
+# Expected (ideal): handleRecover() fires, shows loading spinner briefly.
+# Actual:           nothing happens.
+
+# ── TAP OUTSIDE TO DISMISS KEYBOARD ──────────────────────────────────────────
+# Focus on field first, then tap the heading text to dismiss.
+- tapOn:
+    text: "your@email.com"
+- waitForAnimationToEnd
+- tapOn:
+    text: "Recover Username"
+- waitForAnimationToEnd
+- takeScreenshot: "04_forgot_username_after_tap_heading"
+# "Recover Username" is the screen heading (a plain Text, non-touchable).
+# Tapping it should dismiss the keyboard. If the keyboard persists here,
+# the screen needs a Keyboard.dismiss() in a surrounding Pressable.
+# Note: there is also a "Recover Username" button — tap matching prioritises
+# the first/topmost element (the heading). Verify in screenshot which was tapped.
+
+- hideKeyboard
+- waitForAnimationToEnd
+- takeScreenshot: "05_forgot_username_keyboard_dismissed"
+
+# ── VERIFY NO CRASH ───────────────────────────────────────────────────────────
+
+- assertVisible: "Recover Username"
+- assertVisible: "Email Address"
+- takeScreenshot: "06_forgot_username_final_state"

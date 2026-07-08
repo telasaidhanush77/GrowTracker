@@ -1,0 +1,146 @@
+# 02_manager_back_button.yaml — Android hardware back button on Manager screens
+#
+# WHAT THIS TESTS:
+#   Every secondary screen reachable from the Manager Dashboard is opened,
+#   then the Android hardware back button is pressed. The app must:
+#     (a) Return to the Manager Dashboard — no blank screen, no crash.
+#     (b) Show the correct dashboard tab content.
+#
+# PREREQUISITE — WILL FAIL WITHOUT BackHandler:
+#   See README.md. The fix is a single useEffect in App.tsx.
+#
+# CREDENTIALS: Set MANAGER_USER and MANAGER_PASS in e2e/.env
+
+appId: com.growtracker.app
+---
+
+- launchApp:
+    clearState: true
+- runFlow: "../../helpers/login_manager.yaml"
+- assertVisible: "Team Performance"
+
+# ── 1. BACK FROM TEAM OVERVIEW ───────────────────────────────────────────────
+# Navigate: Dashboard tab → "Team Overview" quick action card
+
+- tapOn: "Team Overview"
+- waitForAnimationToEnd
+- assertVisible: "Team Overview"
+- takeScreenshot: "01a_team_overview_open"
+- pressKey: Back
+- waitForAnimationToEnd
+- assertVisible: "Team Performance"
+- assertNotVisible: "Team Overview"
+- takeScreenshot: "01b_after_back_from_team_overview"
+
+# ── 2. BACK FROM REVIEW EVIDENCE ─────────────────────────────────────────────
+# Navigate: Dashboard tab → "Review Evidence" quick action card
+
+- tapOn: "Review Evidence"
+- waitForAnimationToEnd
+- assertVisible: "Review Evidence"
+- takeScreenshot: "02a_review_evidence_open"
+- pressKey: Back
+- waitForAnimationToEnd
+- assertVisible: "Team Performance"
+- assertNotVisible: "Review Evidence"
+- takeScreenshot: "02b_after_back_from_review_evidence"
+
+# ── 3. BACK FROM TEAM DAILY LOGS ─────────────────────────────────────────────
+# Navigate: Dashboard tab → "Team Daily Activity" card
+
+- tapOn: "Team Daily Activity"
+- waitForAnimationToEnd
+- assertVisible: "Team Daily Activity"
+- takeScreenshot: "03a_team_daily_logs_open"
+- pressKey: Back
+- waitForAnimationToEnd
+- assertVisible: "Team Performance"
+- takeScreenshot: "03b_after_back_from_team_daily_logs"
+
+# ── 4. BACK FROM NOTIFICATIONS ───────────────────────────────────────────────
+
+- tapOn: "🔔"
+- waitForAnimationToEnd
+- assertVisible: "Notifications"
+- takeScreenshot: "04a_notifications_open"
+- pressKey: Back
+- waitForAnimationToEnd
+- assertVisible: "Team Performance"
+- assertNotVisible: "Notifications"
+- takeScreenshot: "04b_after_back_from_notifications"
+
+# ── 5. BACK FROM PROFILE ─────────────────────────────────────────────────────
+
+- tapOn: "···"
+- waitForAnimationToEnd
+- tapOn: "My Profile"
+- waitForAnimationToEnd
+- assertVisible: "Sign Out"
+- takeScreenshot: "05a_profile_open"
+- pressKey: Back
+- waitForAnimationToEnd
+- assertVisible: "Team Performance"
+- assertNotVisible: "Sign Out"
+- takeScreenshot: "05b_after_back_from_profile"
+
+# ── 6. BACK FROM GOALS LIST (via Team tab → View Goals) ──────────────────────
+# Navigate: Team tab → first team member "View Goals" button → Goals List (read-only)
+
+- tapOn: "Team"
+- waitForAnimationToEnd
+- assertVisible: "Team Members"
+- scrollUntilVisible:
+    element:
+      text: "View Goals"
+    direction: DOWN
+    timeout: 5000
+- tapOn: "View Goals"
+- waitForAnimationToEnd
+- assertVisible: "Q1"
+- takeScreenshot: "06a_goals_list_view_only_open"
+- pressKey: Back
+- waitForAnimationToEnd
+# Back should return to Manager Dashboard, not Employee Dashboard or auth
+- assertVisible: "Team Members"
+- assertNotVisible: "Q1"
+- takeScreenshot: "06b_after_back_from_goals_list"
+
+# ── 7. BACK FROM SET GOALS (via Team tab) ────────────────────────────────────
+
+- scrollUntilVisible:
+    element:
+      text: "Set Goals"
+    direction: DOWN
+    timeout: 5000
+- tapOn: "Set Goals"
+- waitForAnimationToEnd
+- assertVisible: "Set Goals"
+- takeScreenshot: "07a_set_goals_open"
+- pressKey: Back
+- waitForAnimationToEnd
+- assertVisible: "Team Members"
+- takeScreenshot: "07b_after_back_from_set_goals"
+
+# ── 8. BACK FROM ROOT DASHBOARD ──────────────────────────────────────────────
+
+- tapOn: "Dashboard"
+- waitForAnimationToEnd
+- assertVisible: "Team Performance"
+- takeScreenshot: "08a_root_dashboard_before_back"
+- pressKey: Back
+- waitForAnimationToEnd
+- launchApp
+- extendedWaitUntil:
+    visible:
+      text: "Team Performance"
+    timeout: 20000
+- takeScreenshot: "08b_after_root_back_relaunch"
+
+# ── 9. NO BLANK SCREEN DURING RAPID FORWARD+BACK ────────────────────────────
+
+- tapOn: "Team Overview"
+- pressKey: Back
+- waitForAnimationToEnd
+- assertVisible: "Team Performance"
+- assertNotVisible: "Team Overview"
+- takeScreenshot: "09_rapid_forward_back_no_blank"

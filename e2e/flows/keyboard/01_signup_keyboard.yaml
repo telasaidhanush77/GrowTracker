@@ -1,0 +1,158 @@
+# 01_signup_keyboard.yaml — Sign Up form keyboard behavior
+#
+# WHAT THIS TESTS:
+#   1. Active input not covered by keyboard — screenshot at each field.
+#      Open the screenshots in your image viewer after the run and check
+#      that the focused field is visible ABOVE the keyboard.
+#   2. Enter key ("Next") advances focus — DOCUMENTED GAP: SignUpScreen has no
+#      returnKeyType="next" on any field. Pressing Enter does nothing useful.
+#      Screenshots show focus did NOT advance to the next field.
+#   3. Enter key on last field ("Done") submits — DOCUMENTED GAP: Confirm
+#      Password has no returnKeyType="done" / onSubmitEditing. Enter does nothing.
+#   4. Tapping non-interactive text dismisses the keyboard.
+#
+# SCREENSHOTS: Saved to the Maestro output directory.
+#   Run with:  maestro test e2e/flows/keyboard/01_signup_keyboard.yaml
+#   Screenshots land in ~/.maestro/tests/<timestamp>/ (or --output <dir>)
+#
+# CRITICAL FIELDS TO INSPECT (most overlap risk on Android):
+#   09_signup_password_focused.png — password field near bottom of form
+#   11_signup_confirm_focused.png  — confirm field at very bottom of form
+#   Android has KeyboardAvoidingView behavior=undefined, so the layout relies
+#   on windowSoftInputMode=adjustResize in AndroidManifest. If that is not
+#   set correctly these two fields may be behind the keyboard.
+
+appId: com.growtracker.app
+---
+
+# ── Navigate to Sign Up form ──────────────────────────────────────────────────
+
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible:
+      text: "Employee"
+    timeout: 30000
+- tapOn: "Employee"
+- assertVisible: "Employee Portal"
+- tapOn: "Sign Up"
+- assertVisible: "Create Account"
+- assertVisible: "Fill in your details to get started"
+
+# ── FIELD 1: First Name ───────────────────────────────────────────────────────
+
+- tapOn:
+    text: "First"
+- waitForAnimationToEnd
+- takeScreenshot: "01_signup_first_name_focused"
+# Open this screenshot: the "First Name *" label and input must be above keyboard.
+
+- inputText: "Alice"
+- takeScreenshot: "02_signup_first_name_typed"
+
+# ── NEXT KEY TEST ─────────────────────────────────────────────────────────────
+# GAP: returnKeyType="next" is not set. Enter should move focus to Last Name.
+# After pressing Enter, take a screenshot. If keyboard is still on First Name
+# (hint text still highlighted, Last Name placeholder is un-focused) — gap confirmed.
+- pressKey: Enter
+- waitForAnimationToEnd
+- takeScreenshot: "03_signup_enter_key_result"
+# Expected (ideal): focus jumps to Last Name, keyboard still open.
+# Actual:           focus stays on First Name or keyboard dismisses (no Next behavior).
+
+# ── FIELD 2: Last Name ────────────────────────────────────────────────────────
+
+- tapOn:
+    text: "Last"
+- waitForAnimationToEnd
+- takeScreenshot: "04_signup_last_name_focused"
+- inputText: "Smith"
+- waitForAnimationToEnd
+# blur to trigger autoUsername (fills Username from First + Last)
+- pressKey: Enter
+
+# ── FIELD 3: Email ────────────────────────────────────────────────────────────
+
+- tapOn:
+    text: "you@example.com"
+- waitForAnimationToEnd
+- takeScreenshot: "05_signup_email_focused"
+- inputText: "alice.smith@example.com"
+
+# ── FIELD 4: Username ─────────────────────────────────────────────────────────
+
+- tapOn:
+    text: "e.g. john.doe"
+- waitForAnimationToEnd
+- takeScreenshot: "06_signup_username_focused"
+# Note: username may be auto-filled (alice.smith) from the autoUsername() onBlur logic.
+
+# ── FIELD 5: Mobile (phone-pad keyboard) ─────────────────────────────────────
+
+- tapOn:
+    text: "+91 9876543210"
+- waitForAnimationToEnd
+- takeScreenshot: "07_signup_mobile_focused"
+# Phone-pad keyboard replaces the alpha keyboard. Check screenshot for overlap.
+- inputText: "9876543210"
+
+# ── TAP OUTSIDE TO DISMISS KEYBOARD ──────────────────────────────────────────
+# "Fill in your details to get started" is a plain Text (no onPress parent).
+# With keyboardShouldPersistTaps="handled", tapping a non-touchable element
+# dismisses the keyboard without the ScrollView consuming the tap.
+- tapOn:
+    text: "Fill in your details to get started"
+- waitForAnimationToEnd
+- takeScreenshot: "08_signup_keyboard_dismissed"
+# Expected: keyboard gone, full form visible. If keyboard is STILL visible here
+# the ScrollView's keyboardShouldPersistTaps setting may need to change to "always".
+
+# ── FIELD 6: Password (CRITICAL — near bottom of form) ───────────────────────
+
+- scrollUntilVisible:
+    element:
+      text: "Min. 8 characters"
+    direction: DOWN
+    timeout: 5000
+- tapOn:
+    text: "Min. 8 characters"
+- waitForAnimationToEnd
+- takeScreenshot: "09_signup_password_focused"
+# CRITICAL: Inspect this screenshot carefully.
+# The password field is near the bottom of the scroll view. On Android without
+# KeyboardAvoidingView behavior, the keyboard may overlap it if adjustResize
+# is not configured. The label "Password *" and the input border must be visible.
+- inputText: "TestPass123!"
+- takeScreenshot: "10_signup_password_typed"
+
+# ── FIELD 7: Confirm Password (CRITICAL — bottom of form) ────────────────────
+
+- scrollUntilVisible:
+    element:
+      text: "Re-enter password"
+    direction: DOWN
+    timeout: 5000
+- tapOn:
+    text: "Re-enter password"
+- waitForAnimationToEnd
+- takeScreenshot: "11_signup_confirm_focused"
+# CRITICAL: This is the last field, furthest from the top.
+# If any field is going to be covered by the keyboard, it will be this one.
+# The confirm input border and "Confirm Password *" label must be fully visible.
+- inputText: "TestPass123!"
+- takeScreenshot: "12_signup_confirm_typed"
+
+# ── DONE KEY TEST ─────────────────────────────────────────────────────────────
+# GAP: Confirm Password has no returnKeyType="done" and no onSubmitEditing.
+# Pressing Enter on the last field should submit the form (or at minimum show
+# a "terms required" validation message). Currently it does nothing.
+- pressKey: Enter
+- waitForAnimationToEnd
+- takeScreenshot: "13_signup_done_key_result"
+# Expected (ideal): handleSignUp() fires, shows "Please accept Terms" error.
+# Actual:           nothing happens — no submit, no error.
+
+# ── VERIFY NO CRASH ───────────────────────────────────────────────────────────
+
+- assertVisible: "Create Account"
+- takeScreenshot: "14_signup_final_state"

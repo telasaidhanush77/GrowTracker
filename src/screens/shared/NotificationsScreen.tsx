@@ -1,20 +1,22 @@
-import { useMemo } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useCallback, useMemo } from 'react';
+import { SectionList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Header from '../../components/Header';
 import { useApp } from '../../context/AppContext';
 import { useTheme } from '../../context/ThemeContext';
 import type { ColorPalette } from '../../theme';
 import { Radius, Shadow, Spacing, Typography } from '../../theme';
-import { Notification, ScreenProps } from '../../types';
+import { NavParams, Notification, Screen, ScreenProps } from '../../types';
 import { NOTIF_ICONS, timeAgo } from '../../utils';
 
-function getDestination(notif: Notification, role: string | null): { screen: string; params?: any } | null {
+function getDestination(notif: Notification, role: string | null): { screen: Screen; params?: NavParams } | null {
   switch (notif.type) {
     case 'evidence_submitted':
       if (role === 'manager') return { screen: 'review-evidence' };
+      if (role === 'admin') return { screen: 'admin-dashboard' };
       break;
     case 'evidence_approved':
       if (role === 'employee') return { screen: 'goals-list' };
+      if (role === 'admin') return { screen: 'admin-dashboard' };
       break;
     case 'evidence_rejected':
       if (role === 'employee') {
@@ -22,6 +24,7 @@ function getDestination(notif: Notification, role: string | null): { screen: str
           ? { screen: 'submit-evidence', params: { goalId: notif.relatedGoalId } }
           : { screen: 'goals-list' };
       }
+      if (role === 'admin') return { screen: 'admin-dashboard' };
       break;
     case 'goal_assigned':
     case 'goal_adjusted':
@@ -30,6 +33,7 @@ function getDestination(notif: Notification, role: string | null): { screen: str
           ? { screen: 'goals-list', params: { filterStatus: 'not_started' } }
           : { screen: 'goals-list' };
       }
+      if (role === 'admin') return { screen: 'admin-dashboard' };
       break;
     case 'fiscal_year_complete':
       if (role === 'employee') return { screen: 'goals-list' };
@@ -37,8 +41,28 @@ function getDestination(notif: Notification, role: string | null): { screen: str
       if (role === 'admin') return { screen: 'admin-dashboard' };
       break;
     case 'onboarding_complete':
+      if (role === 'employee') return { screen: 'employee-dashboard' };
       if (role === 'manager') return { screen: 'team-overview' };
       if (role === 'admin') return { screen: 'admin-dashboard' };
+      break;
+    case 'employee_offboarded':
+      if (role === 'manager') return { screen: 'team-overview' };
+      if (role === 'admin') return { screen: 'admin-dashboard' };
+      break;
+    case 'manager_changed':
+      if (role === 'employee') return { screen: 'profile' };
+      if (role === 'manager') return { screen: 'team-overview' };
+      if (role === 'admin') return { screen: 'admin-dashboard' };
+      break;
+    case 'ai_overdue_alert':
+    case 'ai_deadline_warning':
+      if (role === 'employee') return { screen: 'goals-list' };
+      break;
+    case 'ai_daily_log_reminder':
+      if (role === 'employee') return { screen: 'daily-log' };
+      break;
+    case 'ai_streak_milestone':
+      if (role === 'employee') return { screen: 'my-progress' };
       break;
   }
   return null;
@@ -185,6 +209,12 @@ export default function NotificationsScreen({
     goal_adjusted: { bg: colors.inProgressBg, accent: colors.inProgress, label: 'Goal Updated' },
     fiscal_year_complete: { bg: colors.approvedBg, accent: colors.approved, label: 'FY Complete' },
     onboarding_complete: { bg: colors.inProgressBg, accent: colors.inProgress, label: 'Onboarding' },
+    employee_offboarded: { bg: colors.rejectedBg, accent: colors.rejected, label: 'Offboarded' },
+    manager_changed: { bg: colors.inProgressBg, accent: colors.inProgress, label: 'Manager Change' },
+    ai_overdue_alert: { bg: colors.rejectedBg, accent: colors.rejected, label: 'Overdue' },
+    ai_deadline_warning: { bg: colors.pendingBg, accent: colors.pending, label: 'Deadline' },
+    ai_daily_log_reminder: { bg: colors.inProgressBg, accent: colors.inProgress, label: 'Reminder' },
+    ai_streak_milestone: { bg: colors.approvedBg, accent: colors.approved, label: 'Milestone' },
   }), [colors]);
 
   const myNotifs = notifications
@@ -193,15 +223,65 @@ export default function NotificationsScreen({
 
   const unreadCount = myNotifs.filter(n => !n.read).length;
 
-  const groups = groupByDate(myNotifs);
+  const sections = useMemo(
+    () => groupByDate(myNotifs).map(g => ({ title: g.label, data: g.items })),
+    [myNotifs],
+  );
 
-  function handleNotifTap(notif: Notification) {
+  const handleNotifTap = useCallback((notif: Notification) => {
     markNotifRead(notif.id);
     const dest = getDestination(notif, currentRole);
     if (dest) {
-      navigation.navigate(dest.screen as any, dest.params);
+      navigation.navigate(dest.screen, dest.params);
     }
-  }
+  }, [markNotifRead, currentRole, navigation]);
+
+  const renderNotif = useCallback(({ item: notif }: { item: Notification }) => {
+    const icon = NOTIF_ICONS[notif.type] ?? '📌';
+    const tc = (TYPE_CONFIG as Record<string, { bg: string; accent: string; label: string }>)[notif.type] ?? { bg: colors.bgElevated, accent: colors.textSecondary, label: 'Info' };
+    const dest = getDestination(notif, currentRole);
+    const isActionable = !!dest;
+
+    return (
+      <TouchableOpacity
+        style={[styles.card, !notif.read && styles.cardUnread]}
+        onPress={() => handleNotifTap(notif)}
+        activeOpacity={0.8}
+      >
+        {!notif.read && (
+          <View style={[styles.accentBar, { backgroundColor: tc.accent }]} />
+        )}
+        <View style={[styles.iconCircle, { backgroundColor: tc.bg, borderColor: tc.accent + '40' }]}>
+          <Text style={styles.iconText}>{icon}</Text>
+        </View>
+        <View style={styles.body}>
+          <View style={styles.bodyTop}>
+            <Text style={[styles.notifTitle, !notif.read && styles.notifTitleUnread]} numberOfLines={1}>
+              {notif.title}
+            </Text>
+            <View style={[styles.typePill, { backgroundColor: tc.bg }]}>
+              <Text style={[styles.typePillText, { color: tc.accent }]}>{tc.label}</Text>
+            </View>
+          </View>
+          <Text style={styles.message} numberOfLines={2}>{notif.message}</Text>
+          <View style={styles.footer}>
+            <Text style={styles.time}>{timeAgo(notif.createdAt)}</Text>
+            <View style={styles.footerRight}>
+              {!notif.read && <View style={[styles.unreadDot, { backgroundColor: tc.accent }]} />}
+              {isActionable && <Text style={[styles.viewLink, { color: tc.accent }]}>View →</Text>}
+            </View>
+          </View>
+        </View>
+      </TouchableOpacity>
+    );
+  }, [styles, colors, TYPE_CONFIG, currentRole, handleNotifTap]);
+
+  const renderSectionHeader = useCallback(({ section }: { section: { title: string } }) => (
+    <View style={styles.groupHeader}>
+      <Text style={styles.groupLabel}>{section.title}</Text>
+      <View style={styles.groupLine} />
+    </View>
+  ), [styles]);
 
   return (
     <View style={styles.root}>
@@ -228,9 +308,15 @@ export default function NotificationsScreen({
         </View>
       )}
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-
-        {myNotifs.length === 0 && (
+      <SectionList
+        sections={sections}
+        keyExtractor={notif => notif.id}
+        renderItem={renderNotif}
+        renderSectionHeader={renderSectionHeader}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        stickySectionHeadersEnabled={false}
+        ListEmptyComponent={
           <View style={styles.emptyState}>
             <View style={styles.emptyIconWrap}>
               <Text style={styles.emptyIconText}>◉</Text>
@@ -240,64 +326,9 @@ export default function NotificationsScreen({
               You'll see updates here when goals are assigned, evidence is reviewed, or status changes.
             </Text>
           </View>
-        )}
-
-        {groups.map(group => (
-          <View key={group.label}>
-            <View style={styles.groupHeader}>
-              <Text style={styles.groupLabel}>{group.label}</Text>
-              <View style={styles.groupLine} />
-            </View>
-
-            {group.items.map(notif => {
-              const icon = NOTIF_ICONS[notif.type] ?? '📌';
-              const tc = (TYPE_CONFIG as Record<string, { bg: string; accent: string; label: string }>)[notif.type] ?? { bg: colors.bgElevated, accent: colors.textSecondary, label: 'Info' };
-              const dest = getDestination(notif, currentRole);
-              const isActionable = !!dest;
-
-              return (
-                <TouchableOpacity
-                  key={notif.id}
-                  style={[styles.card, !notif.read && styles.cardUnread]}
-                  onPress={() => handleNotifTap(notif)}
-                  activeOpacity={0.8}
-                >
-                  {!notif.read && (
-                    <View style={[styles.accentBar, { backgroundColor: tc.accent }]} />
-                  )}
-
-                  <View style={[styles.iconCircle, { backgroundColor: tc.bg, borderColor: tc.accent + '40' }]}>
-                    <Text style={styles.iconText}>{icon}</Text>
-                  </View>
-
-                  <View style={styles.body}>
-                    <View style={styles.bodyTop}>
-                      <Text style={[styles.notifTitle, !notif.read && styles.notifTitleUnread]} numberOfLines={1}>
-                        {notif.title}
-                      </Text>
-                      <View style={[styles.typePill, { backgroundColor: tc.bg }]}>
-                        <Text style={[styles.typePillText, { color: tc.accent }]}>{tc.label}</Text>
-                      </View>
-                    </View>
-                    <Text style={styles.message} numberOfLines={2}>{notif.message}</Text>
-                    <View style={styles.footer}>
-                      <Text style={styles.time}>{timeAgo(notif.createdAt)}</Text>
-                      <View style={styles.footerRight}>
-                        {!notif.read && <View style={[styles.unreadDot, { backgroundColor: tc.accent }]} />}
-                        {isActionable && (
-                          <Text style={[styles.viewLink, { color: tc.accent }]}>View →</Text>
-                        )}
-                      </View>
-                    </View>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        ))}
-
-        <View style={{ height: 36 }} />
-      </ScrollView>
+        }
+        ListFooterComponent={<View style={{ height: 36 }} />}
+      />
     </View>
   );
 }

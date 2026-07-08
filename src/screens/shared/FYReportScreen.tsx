@@ -3,10 +3,10 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import Header from '../../components/Header';
 import { useApp } from '../../context/AppContext';
 import { useTheme } from '../../context/ThemeContext';
-import { Radius, Shadow, Spacing, Typography } from '../../theme';
+import { Radius, Shadow, Spacing } from '../../theme';
 import type { ColorPalette } from '../../theme';
 import { Goal, ScreenProps } from '../../types';
-import { CATEGORY_CONFIG, calcQuarterScore, getGoalStats, PRIORITY_CONFIG, STATUS_CONFIG } from '../../utils';
+import { calcCompletionRate, CATEGORY_CONFIG, calcQuarterScore, getGoalStats, PRIORITY_CONFIG, STATUS_CONFIG } from '../../utils';
 
 export default function FYReportScreen({ navigation, params }: ScreenProps) {
   const { employees, goals } = useApp();
@@ -24,6 +24,11 @@ export default function FYReportScreen({ navigation, params }: ScreenProps) {
   const q2Score = calcQuarterScore(empGoals, 'Q2');
   const q1Stats = getGoalStats(empGoals, 'Q1');
   const q2Stats = getGoalStats(empGoals, 'Q2');
+  const q1Completion = calcCompletionRate(empGoals, 'Q1');
+  const q2Completion = calcCompletionRate(empGoals, 'Q2');
+  const fyCompletion = empGoals.length > 0
+    ? Math.round(((q1Stats.approved + q2Stats.approved) / empGoals.length) * 100)
+    : 0;
 
   const fyScore = (q1Score > 0 || q2Score > 0)
     ? Math.round((q1Score + q2Score) / ((q1Score > 0 && q2Score > 0) ? 2 : 1))
@@ -80,9 +85,9 @@ export default function FYReportScreen({ navigation, params }: ScreenProps) {
 
           <View style={styles.scoreRow}>
             {[
-              { label: 'Q1', score: q1Score, total: q1Stats.total, approved: q1Stats.approved },
-              { label: 'Q2', score: q2Score, total: q2Stats.total, approved: q2Stats.approved },
-              { label: 'FY', score: fyScore, total: empGoals.length, approved: q1Stats.approved + q2Stats.approved },
+              { label: 'Q1', score: q1Score, total: q1Stats.total, approved: q1Stats.approved, completion: q1Completion },
+              { label: 'Q2', score: q2Score, total: q2Stats.total, approved: q2Stats.approved, completion: q2Completion },
+              { label: 'FY', score: fyScore, total: empGoals.length, approved: q1Stats.approved + q2Stats.approved, completion: fyCompletion },
             ].map((item, i) => (
               <View key={item.label} style={[styles.scoreCell, i > 0 && styles.scoreCellBorder]}>
                 <Text style={[styles.scoreBig, { color: item.score > 0 ? scoreColor(item.score) : colors.textMuted }]}>
@@ -91,6 +96,9 @@ export default function FYReportScreen({ navigation, params }: ScreenProps) {
                 <Text style={styles.scoreUnit}>{item.score > 0 ? '%' : ''}</Text>
                 <Text style={styles.scoreLabel}>{item.label} Score</Text>
                 <Text style={styles.scoreSub}>{item.approved}/{item.total} approved</Text>
+                {item.completion > 0 && (
+                  <Text style={[styles.scoreCompletion, { color: colors.approved }]}>{item.completion}% done</Text>
+                )}
               </View>
             ))}
           </View>
@@ -191,9 +199,6 @@ function GoalReportCard({ goal, colors, styles }: { goal: Goal; colors: ColorPal
         <View style={[styles.chip, { backgroundColor: pc.bg }]}>
           <Text style={[styles.chipText, { color: pc.color }]}>{pc.label}</Text>
         </View>
-        <View style={[styles.chip, { backgroundColor: colors.bgElevated }]}>
-          <Text style={[styles.chipText, { color: colors.textMuted }]}>{goal.weight} cr</Text>
-        </View>
         <View style={[styles.statusChip, { backgroundColor: sc.bg }]}>
           <Text style={[styles.statusChipText, { color: sc.color }]}>{sc.label}</Text>
         </View>
@@ -275,6 +280,7 @@ function createStyles(C: ColorPalette) {
     scoreUnit: { fontSize: 14, fontWeight: '700', color: C.textMuted, marginTop: -4 },
     scoreLabel: { fontSize: 11, fontWeight: '700', color: C.textSecondary, marginTop: 4 },
     scoreSub: { fontSize: 10, color: C.textMuted, marginTop: 2 },
+    scoreCompletion: { fontSize: 10, fontWeight: '700', marginTop: 2 },
     heroDeltas: { paddingTop: Spacing.sm, alignItems: 'center' },
     heroDeltaText: { fontSize: 12, fontWeight: '700' },
 

@@ -1,0 +1,71 @@
+appId: com.growtracker.app
+---
+- launchApp:
+    clearState: true
+
+# Navigate to signup form via Employee portal
+- tapOn: "Employee"
+- assertVisible: "Employee Portal"
+- tapOn: "Sign Up"
+- assertVisible: "Create Account"
+
+# Fill out the registration form (eraseText before each field guards against autofill)
+- tapOn:
+    text: "First"
+- eraseText: 50
+- inputText: "E2E"
+
+- tapOn:
+    text: "Last"
+- eraseText: 50
+- inputText: "Test"
+
+- tapOn:
+    text: "you@example.com"
+- eraseText: 100
+- inputText: "${SIGNUP_EMAIL}"
+
+- tapOn:
+    text: "e.g. john.doe"
+- eraseText: 50
+- inputText: "${SIGNUP_USER}"
+
+- tapOn:
+    text: "Min. 8 characters"
+- eraseText: 50
+- inputText: "TestPass123!"
+- hideKeyboard
+
+- tapOn:
+    text: "Re-enter password"
+- eraseText: 50
+- inputText: "TestPass123!"
+- hideKeyboard
+
+# Accept terms — UI dump confirms terms-checkbox center at (541, 1885) → 50%, 79%
+- waitForAnimationToEnd
+- tapOn:
+    point: "50%,79%"
+
+# Wait for React state update to propagate before tapping submit
+- waitForAnimationToEnd
+
+# Submit — Create Account button center at (541, 2037) → 50%, 85%
+- tapOn:
+    point: "50%,85%"
+
+# Wait up to 30s for Supabase signUp + signOut to complete
+- extendedWaitUntil:
+    visible:
+      text: "Account Created!"
+    timeout: 30000
+
+# Success screen shows generated credentials
+- assertVisible: "Account Created!"
+- assertVisible: "Unique ID"
+- assertVisible: "Username"
+- assertVisible: "Continue to Sign In →"
+
+# Continue returns to login screen
+- tapOn: "Continue to Sign In →"
+- assertVisible: "Employee Portal"

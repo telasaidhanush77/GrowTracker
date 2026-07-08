@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -25,7 +26,9 @@ function toLocalDateString(d: Date): string {
 
 function todayString() {
   const d = new Date();
-  if (d.getDay() === 0) d.setDate(d.getDate() - 1);
+  const day = d.getDay();
+  if (day === 0) d.setDate(d.getDate() - 2); // Sunday → Friday
+  if (day === 6) d.setDate(d.getDate() - 1); // Saturday → Friday
   return toLocalDateString(d);
 }
 
@@ -37,14 +40,18 @@ function formatDisplayDate(date: string) {
 function shiftDateForward(date: string): string {
   const d = new Date(date + 'T00:00:00');
   d.setDate(d.getDate() + 1);
-  if (d.getDay() === 0) d.setDate(d.getDate() + 1);
+  const day = d.getDay();
+  if (day === 6) d.setDate(d.getDate() + 2); // Saturday → Monday
+  if (day === 0) d.setDate(d.getDate() + 1); // Sunday → Monday
   return toLocalDateString(d);
 }
 
 function shiftDateBackward(date: string): string {
   const d = new Date(date + 'T00:00:00');
   d.setDate(d.getDate() - 1);
-  if (d.getDay() === 0) d.setDate(d.getDate() - 1);
+  const day = d.getDay();
+  if (day === 0) d.setDate(d.getDate() - 2); // Sunday → Friday
+  if (day === 6) d.setDate(d.getDate() - 1); // Saturday → Friday
   return toLocalDateString(d);
 }
 
@@ -64,6 +71,16 @@ export default function DailyLogScreen({ navigation, currentUserId, onLogout }: 
   const [notes, setNotes] = useState(existingLog?.notes ?? '');
   const [newTask, setNewTask] = useState('');
   const [saved, setSaved] = useState(false);
+
+  // Sync once if the persisted cache arrives after initial render
+  const didSyncRef = useRef(false);
+  useEffect(() => {
+    if (didSyncRef.current || dailyLogs.length === 0) return;
+    didSyncRef.current = true;
+    const log = dailyLogs.find(l => l.employeeId === currentUserId && l.date === selectedDate);
+    setTasks(log?.tasks ?? []);
+    setNotes(log?.notes ?? '');
+  }, [currentUserId, dailyLogs, selectedDate]);
 
   const notifCount = notifications.filter(n => n.recipientId === currentUserId && !n.read).length;
 
@@ -102,6 +119,19 @@ export default function DailyLogScreen({ navigation, currentUserId, onLogout }: 
 
   const isToday = selectedDate === today;
 
+  function handleBack() {
+    const hasUnsaved = !saved && (tasks.length > 0 || notes.trim().length > 0);
+    if (!hasUnsaved) { navigation.goBack(); return; }
+    Alert.alert(
+      'Unsaved Changes',
+      'Your log entries haven\'t been saved. Leave without saving?',
+      [
+        { text: 'Keep Editing', style: 'cancel' },
+        { text: 'Discard', style: 'destructive', onPress: navigation.goBack },
+      ],
+    );
+  }
+
   return (
     <KeyboardAvoidingView
       style={styles.root}
@@ -112,7 +142,7 @@ export default function DailyLogScreen({ navigation, currentUserId, onLogout }: 
         subtitle="Record your work activities"
         color={colors.bgElevated}
         accentColor={colors.employeePrimary}
-        onBack={() => navigation.goBack()}
+        onBack={handleBack}
         onLogout={onLogout}
         onNotif={() => navigation.navigate('notifications')}
         notifCount={notifCount}
@@ -141,9 +171,10 @@ export default function DailyLogScreen({ navigation, currentUserId, onLogout }: 
 
           <TouchableOpacity
             style={styles.dateArrowBtn}
-            onPress={() => handleDateChange(shiftDateForward(selectedDate))}
+            onPress={() => !isToday && handleDateChange(shiftDateForward(selectedDate))}
+            disabled={isToday}
           >
-            <Text style={[styles.dateArrow, { color: colors.employeePrimary }]}>›</Text>
+            <Text style={[styles.dateArrow, { color: isToday ? colors.textMuted : colors.employeePrimary }]}>›</Text>
           </TouchableOpacity>
         </View>
 
@@ -367,6 +398,7 @@ function createStyles(C: ColorPalette) {
       color: C.textPrimary,
       fontSize: 14,
       minHeight: 100,
+      maxHeight: 160,
       marginBottom: Spacing.lg,
       ...Shadow.sm,
     },

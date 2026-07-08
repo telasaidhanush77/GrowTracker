@@ -1,0 +1,20 @@
+# Re-usable subflow: log in as the pre-seeded test admin.
+# Precondition: app is showing the Splash screen.
+# Postcondition: app is on the Admin Dashboard (Overview tab visible).
+appId: com.growtracker.app
+---
+- extendedWaitUntil:
+    visible:
+      text: "Admin"
+    timeout: 30000
+- tapOn: "Admin"
+- assertVisible: "Admin Portal"
+- tapOn:
+    text: "e.g. john.doe or EMP-0001"
+- inputText: "${ADMIN_USER}"
+- tapOn:
+    text: "Enter your password"
+- inputText: "${ADMIN_PASS}"
+- hideKeyboard
+- tapOn: "Sign In"
+- assertVisible: "Overview"

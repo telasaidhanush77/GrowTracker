@@ -1,0 +1,14 @@
+appId: com.growtracker.app
+---
+- launchApp:
+    clearState: true
+
+- runFlow: "../helpers/login_employee.yaml"
+
+# Open notifications from the bell icon in the header
+- tapOn: "🔔"
+- assertVisible: "Notifications"
+
+# Go back to the dashboard
+- tapOn: "‹"
+- assertVisible: "Overview"

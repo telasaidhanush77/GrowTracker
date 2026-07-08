@@ -1,6 +1,6 @@
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
-import { Radius, Spacing } from '../theme';
+import { Radius } from '../theme';
 
 export interface TabDef {
   key: string;
@@ -35,6 +35,9 @@ export default function BottomTabBar({ tabs, activeKey, onSelect }: Props) {
             style={styles.tabBtn}
             onPress={() => onSelect(tab.key)}
             activeOpacity={0.75}
+            accessibilityLabel={tab.label}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: active }}
           >
             <View
               style={[
@@ -69,10 +72,10 @@ const styles = StyleSheet.create({
   bar: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: 58,
+    height: Platform.OS === 'ios' ? 78 : 80,
     borderTopWidth: 1,
     paddingHorizontal: 6,
-    paddingBottom: 4,
+    paddingBottom: Platform.OS === 'ios' ? 24 : 30,
     paddingTop: 4,
   },
   tabBtn: {

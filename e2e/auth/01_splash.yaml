@@ -1,0 +1,25 @@
+appId: com.growtracker.app
+---
+- launchApp:
+    clearState: true
+
+# ── Splash: tagline + divider + three role cards ─────────────────────────────
+- assertVisible: "Track growth · Drive results"
+- assertVisible: "SIGN IN AS"
+- assertVisible: "Admin"
+- assertVisible: "Manager"
+- assertVisible: "Employee"
+
+# ── Employee card → Employee Portal ──────────────────────────────────────────
+- tapOn: "Employee"
+- assertVisible: "Employee Portal"
+- assertVisible: "Welcome back"
+- assertVisible: "Sign In"
+- assertVisible: "Don't have an account?"
+
+# ── Reset and verify Manager card → Manager Portal ───────────────────────────
+- launchApp:
+    clearState: true
+- assertVisible: "SIGN IN AS"
+- tapOn: "Manager"
+- assertVisible: "Manager Portal"

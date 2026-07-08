@@ -23,9 +23,21 @@ function formatDisplayDate(date: string) {
   return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
 }
 
-function shiftDate(date: string, days: number) {
+function shiftDateForward(date: string): string {
   const d = new Date(date + 'T00:00:00');
-  d.setDate(d.getDate() + days);
+  d.setDate(d.getDate() + 1);
+  const day = d.getDay();
+  if (day === 6) d.setDate(d.getDate() + 2); // Saturday → Monday
+  if (day === 0) d.setDate(d.getDate() + 1); // Sunday → Monday
+  return toLocalDateString(d);
+}
+
+function shiftDateBackward(date: string): string {
+  const d = new Date(date + 'T00:00:00');
+  d.setDate(d.getDate() - 1);
+  const day = d.getDay();
+  if (day === 0) d.setDate(d.getDate() - 2); // Sunday → Friday
+  if (day === 6) d.setDate(d.getDate() - 1); // Saturday → Friday
   return toLocalDateString(d);
 }
 
@@ -71,7 +83,7 @@ export default function TeamDailyLogs({ navigation, currentUserId, onLogout }: S
         <View style={styles.dateNav}>
           <TouchableOpacity
             style={styles.dateArrowBtn}
-            onPress={() => setSelectedDate(shiftDate(selectedDate, -1))}
+            onPress={() => setSelectedDate(shiftDateBackward(selectedDate))}
           >
             <Text style={[styles.dateArrow, { color: colors.managerPrimary }]}>‹</Text>
           </TouchableOpacity>
@@ -87,7 +99,7 @@ export default function TeamDailyLogs({ navigation, currentUserId, onLogout }: S
 
           <TouchableOpacity
             style={styles.dateArrowBtn}
-            onPress={() => setSelectedDate(shiftDate(selectedDate, 1))}
+            onPress={() => setSelectedDate(shiftDateForward(selectedDate))}
           >
             <Text style={[styles.dateArrow, { color: colors.managerPrimary }]}>›</Text>
           </TouchableOpacity>
