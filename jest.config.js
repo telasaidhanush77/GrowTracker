@@ -1,5 +1,8 @@
 module.exports = {
   preset: 'jest-expo',
+  // ponytail: heavy screen tests exceed the 5s default when every core runs a worker
+  testTimeout: 30000,
+  maxWorkers: '50%',
 setupFilesAfterEnv: ['./jest.setup.ts'],
   testPathIgnorePatterns: ['/node_modules/', '/android/', '/ios/'],
   transformIgnorePatterns: [
